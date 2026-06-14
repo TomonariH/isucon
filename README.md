@@ -29,6 +29,7 @@ templates/
   go-pprof.snippet          # Go pprof エンドポイント追加コード
   h2o-ltsv.conf             # H2O web server LTSV ログ設定
 .claude/commands/
+  isucon-survey.md          # /isucon-survey スキル（競技開幕の環境調査）
   isucon-analyze.md         # /isucon-analyze スキル
   isucon-review-app.md      # /isucon-review-app スキル
   isucon-fix.md             # /isucon-fix スキル
@@ -44,9 +45,21 @@ reports/                    # analyze.sh が生成するレポートの出力先
 ### Phase 1 — 競技開始直後（最初の 5 分）
 
 ```bash
-# このリポジトリをサーバーに clone してセットアップを 1 発実行
+# このリポジトリをサーバーに clone
 git clone <this-repo> ~/isucon-tools
 cd ~/isucon-tools
+```
+
+まず環境を調査してからセットアップ方針を決める:
+
+```
+/isucon-survey
+```
+
+調査結果に基づいてセットアップを実行する:
+
+```bash
+# 1台構成の場合（調査結果から推奨コマンドが提示される）
 sudo bash scripts/setup.sh
 ```
 
@@ -234,6 +247,37 @@ uri_matching_groups:
 ---
 
 ## Claude Code スキルリファレンス
+
+### `/isucon-survey`
+
+競技開始直後にサーバーを調査し、環境サマリーと推奨セットアップコマンドを提示する。  
+OS / アーキテクチャ・動作サービス・アプリのサービスファイル・DB 接続情報（`EnvironmentFile=` 参照先も読む）・DB 種別（ローカル / RDS / Aurora）・静的ファイルパスを一括調査する。
+
+```
+/isucon-survey
+```
+
+出力例:
+```
+## ISUCON 環境サマリー
+
+### サーバー
+- OS: Ubuntu 22.04 (x86_64)
+- Web サーバー: nginx 1.24
+- アプリ: Go (サービス名: isu-go, ポート: 8080)
+- webapp パス: /home/isucon/webapp
+
+### DB
+- 種別: ローカル MySQL
+- ホスト: localhost
+- ユーザー: isucon
+
+### 推奨セットアップコマンド
+sudo bash scripts/setup-tools.sh
+sudo bash scripts/setup-nginx.sh
+sudo bash scripts/setup-mysql.sh
+sudo bash scripts/setup-app.sh
+```
 
 ### `/isucon-analyze`
 

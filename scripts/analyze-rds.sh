@@ -8,6 +8,9 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
 
+# /isucon-survey が生成した env.sh を読む（RDS 接続情報・ログパスを含む）
+[ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
+
 # 接続情報（環境変数で上書き可）
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-3306}"
@@ -19,6 +22,10 @@ MYSQL_OPTS=(-h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "-p$DB_PASS")
 
 ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"
 SLOW_LOG_MINUTES="${SLOW_LOG_MINUTES:-60}"
+if ! [[ "$SLOW_LOG_MINUTES" =~ ^[0-9]+$ ]]; then
+  echo "[analyze-rds] ERROR: SLOW_LOG_MINUTES must be an integer" >&2
+  exit 1
+fi
 
 log() { echo "[analyze-rds] $*"; }
 
@@ -26,7 +33,7 @@ log() { echo "[analyze-rds] $*"; }
 _detect_access_log() {
   if [ -n "${NGINX_ACCESS_LOG:-}" ]; then
     echo "$NGINX_ACCESS_LOG"
-  elif [ -f /etc/h2o/h2o.conf ]; then
+  elif systemctl is-active --quiet h2o 2>/dev/null && [ -f /etc/h2o/h2o.conf ]; then
     echo "/var/log/h2o/access.log"
   else
     echo "/var/log/nginx/access.log"
@@ -69,6 +76,8 @@ run_alp() {
 # ---- mysql.slow_log テーブルからスロークエリ取得 ----
 # TABLE モードが設定されていれば 0 を返す。未設定なら 1 を返す（呼び出し元でフォールバック判断）。
 run_slow_log_table() {
+  command -v pt-query-digest &>/dev/null || return 1
+
   local log_output
   log_output="$(mysql "${MYSQL_OPTS[@]}" -N -e "SELECT @@log_output;" 2>/dev/null || echo '')"
   if ! echo "$log_output" | grep -qi "TABLE"; then
@@ -78,9 +87,11 @@ run_slow_log_table() {
   echo "## Slow Query Log (mysql.slow_log table) — Top queries by total time"
   echo ""
   echo '```'
+  local tmp_log
+  tmp_log="$(mktemp)"
   # ORDER BY なし: start_time の時系列順で全件取得し、pt-query-digest 側で集計する。
   # ORDER BY query_time DESC + 少数 LIMIT は高頻度・短時間クエリ（N+1 の典型）を除外するため使わない。
-  mysql "${MYSQL_OPTS[@]}" --skip-column-names -e "
+  if ! mysql "${MYSQL_OPTS[@]}" --skip-column-names -e "
     SELECT
       CONCAT(
         '# Time: ', DATE_FORMAT(start_time, '%y%m%d %H:%i:%S'), '\n',
@@ -92,7 +103,21 @@ run_slow_log_table() {
     FROM mysql.slow_log
     WHERE start_time >= DATE_SUB(NOW(), INTERVAL ${SLOW_LOG_MINUTES} MINUTE)
     LIMIT 10000;
-  " 2>/dev/null | pt-query-digest --type=slowlog - 2>/dev/null || true
+  " > "$tmp_log" 2>/dev/null; then
+    rm -f "$tmp_log"
+    echo "> Failed to read mysql.slow_log table."
+    echo '```'
+    echo ""
+    return 1
+  fi
+  if ! pt-query-digest --type=slowlog "$tmp_log" 2>/dev/null; then
+    rm -f "$tmp_log"
+    echo "> Failed to run pt-query-digest."
+    echo '```'
+    echo ""
+    return 1
+  fi
+  rm -f "$tmp_log"
   echo '```'
   echo ""
 }
@@ -139,11 +164,15 @@ rotate_logs() {
       sudo truncate -s 0 "$ACCESS_LOG"
     fi
 
-    # mysql.slow_log をリセット（次のベンチ用）
-    if mysql "${MYSQL_OPTS[@]}" -e "TRUNCATE TABLE mysql.slow_log;" 2>/dev/null; then
-      log "mysql.slow_log truncated"
+    # RDS の mysql.slow_log は共有されやすいため、明示指定時だけローテートする。
+    if [ "${ROTATE_RDS_SLOW_LOG:-0}" = "1" ]; then
+      if mysql "${MYSQL_OPTS[@]}" -e "CALL mysql.rds_rotate_slow_log;" 2>/dev/null; then
+        log "mysql.slow_log rotated"
+      else
+        log "Could not rotate mysql.slow_log"
+      fi
     else
-      log "Could not truncate mysql.slow_log (log_output may not be TABLE)"
+      log "mysql.slow_log not rotated. Set ROTATE_RDS_SLOW_LOG=1 to reset it."
     fi
   fi
 }

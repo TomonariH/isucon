@@ -8,8 +8,8 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
 
-# Docker 環境では setup-docker.sh が生成した env-docker.sh をここで読む
-[ -f "$SCRIPT_DIR/env-docker.sh" ] && source "$SCRIPT_DIR/env-docker.sh"
+# /isucon-survey が生成した env.sh を読む（Docker・RDS 等のログパス・接続情報を含む）
+[ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
 
 # デフォルトパス（ISUCON環境に合わせて上書き可能）
 MYSQL_SLOW_LOG="${MYSQL_SLOW_LOG:-/var/log/mysql/slow.log}"
@@ -19,7 +19,7 @@ ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"
 _detect_access_log() {
   if [ -n "${NGINX_ACCESS_LOG:-}" ]; then
     echo "$NGINX_ACCESS_LOG"
-  elif [ -f /etc/h2o/h2o.conf ]; then
+  elif systemctl is-active --quiet h2o 2>/dev/null && [ -f /etc/h2o/h2o.conf ]; then
     echo "/var/log/h2o/access.log"
   else
     echo "/var/log/nginx/access.log"
@@ -122,6 +122,7 @@ generate_report() {
 
 # ---- Main ----
 main() {
+  mkdir -p "$REPO_DIR/reports"
   log "Generating report: $REPORT_FILE"
   generate_report
   rotate_logs

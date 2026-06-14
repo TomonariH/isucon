@@ -3,6 +3,7 @@
 
 // ---- import に追加 ----
 import (
+	"log"
 	_ "net/http/pprof"  // 副作用インポート: /debug/pprof エンドポイントを登録する
 	"net/http"
 )
@@ -12,7 +13,9 @@ import (
 // デフォルトの http.ServeMux に /debug/pprof/* が自動登録される。
 // アプリが独自の mux を使っている場合は別ポートで起動する。
 go func() {
-	http.ListenAndServe(":6060", nil)  // pprof 専用ポート
+	if err := http.ListenAndServe("127.0.0.1:6060", nil); err != nil {
+		log.Printf("pprof server stopped: %v", err)
+	}
 }()
 
 // ---- pprof の取得コマンド ----

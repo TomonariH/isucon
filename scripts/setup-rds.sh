@@ -6,6 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# /isucon-survey が生成した env.sh を読む（存在すれば）
+[ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
+
 log() { echo "[setup-rds] $*"; }
 
 DB_HOST="${DB_HOST:-127.0.0.1}"

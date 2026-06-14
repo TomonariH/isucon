@@ -1,2 +1,5 @@
 reports/*.md
+scripts/env.sh
 scripts/env-docker.sh
+scripts/.setup-state/
+*.deb

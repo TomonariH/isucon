@@ -15,7 +15,7 @@
    **2台構成（典型的なパターン）**:
    ```
    server1 (nginx 専用 + ロードバランサー):
-     - nginx でリクエストを受けて server2/3 に振る
+     - nginx でリクエストを受けて app サーバーに振る
      - 静的ファイルもここで直接配信
    
    server2 (app + MySQL):
@@ -58,7 +58,10 @@
    sudo systemctl restart <確認したサービス名>
 
    # アプリサーバーからの接続を許可するユーザー作成
-   mysql -e "GRANT ALL ON isucon.* TO 'isucon'@'%' IDENTIFIED BY 'isucon';"
+   # DB名・ユーザー名・パスワード・接続元IPは実環境の値に置き換える
+   mysql -e "CREATE USER IF NOT EXISTS 'isucon'@'<app-server-ip>' IDENTIFIED BY '<password>';"
+   mysql -e "GRANT ALL PRIVILEGES ON isucon.* TO 'isucon'@'<app-server-ip>';"
+   mysql -e "FLUSH PRIVILEGES;"
    ```
 
 5. **各サーバーでのセットアップを案内する**
@@ -66,18 +69,21 @@
    役割に応じて必要なスクリプトだけ実行する:
    ```bash
    # nginx サーバー (server1) で実行
-   sudo bash scripts/setup-tools.sh
-   sudo bash scripts/setup-nginx.sh
-   sudo bash scripts/setup-app.sh
-   sudo cp templates/nginx-upstream.conf /etc/nginx/sites-available/isucon.conf
+   bash scripts/setup-tools.sh
+   bash scripts/setup-nginx.sh
+   # webapp がこのサーバーにも配置されている場合のみ:
+   # bash scripts/setup-app.sh
+   sudo nginx -T | grep -E 'server_name|proxy_pass|include .*(conf.d|sites-enabled)'
+   # templates/nginx-upstream.conf を参考に、既存の server block へ upstream と proxy_pass の差分だけを反映する
+   sudoedit <既存の nginx server 設定ファイル>
    sudo nginx -t && sudo systemctl reload nginx
 
    # app サーバー (server2, 3) で実行
-   sudo bash scripts/setup-tools.sh
-   sudo bash scripts/setup-app.sh
+   bash scripts/setup-tools.sh
+   bash scripts/setup-app.sh
 
    # DB サーバー (server3) で実行
-   sudo bash scripts/setup-mysql.sh  # MySQL のサービス名・conf dir を自動検出
+   bash scripts/setup-mysql.sh  # MySQL のサービス名・conf dir を自動検出
    ```
 
 6. **分散環境での分析手順を案内する**

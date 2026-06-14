@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$SCRIPT_DIR/lib.sh"
+STATE_DIR="$SCRIPT_DIR/.setup-state"
 
 log() { echo "[setup-tools] $*"; }
 
@@ -20,6 +21,8 @@ install_alp() {
   ALP_VERSION="1.0.21"
   curl -fsSL "https://github.com/tkuchiki/alp/releases/download/v${ALP_VERSION}/alp_linux_${arch}.tar.gz" \
     | sudo tar xz -C /usr/local/bin alp
+  mkdir -p "$STATE_DIR"
+  touch "$STATE_DIR/alp-installed"
   log "alp installed: $(alp --version 2>&1 | head -1)"
 }
 
@@ -31,6 +34,8 @@ install_pt_query_digest() {
   log "Installing percona-toolkit..."
   ensure_percona_repo
   pkg_install percona-toolkit
+  mkdir -p "$STATE_DIR"
+  touch "$STATE_DIR/percona-toolkit-installed"
   log "pt-query-digest installed"
 }
 

@@ -12,6 +12,7 @@ scripts/
   setup-nginx.sh    # nginx LTSV アクセスログ設定（nginx サーバー）
   setup-mysql.sh    # MySQL スロークエリログ設定（DB サーバー、ローカル MySQL 用）
   setup-app.sh      # git init / reports ディレクトリ作成（アプリサーバー）
+  setup-docker.sh   # Docker Compose 環境向けセットアップ（ログ expose・nginx LTSV・MySQL slow log）
   setup-rds.sh      # RDS 環境向けセットアップ（MySQL が AWS RDS / Aurora の場合）
   lib.sh            # 共通環境検出ライブラリ（OS / arch / MySQL サービス名など）
   analyze.sh        # ベンチ後に毎回実行する計測・レポート生成（H2O 自動検出）
@@ -347,17 +348,45 @@ make  # 初回のみ
 
 スコア例: `{"pass":true,"score":1710,"success":1434,"fail":0,"messages":[]}`
 
-ログパスを docker コンテナに合わせる場合:
-
-```bash
-NGINX_ACCESS_LOG=<コンテナのログパス> bash scripts/analyze.sh
-```
+setup-docker.sh でログを自動的にホストに expose できる（下記 Docker Compose パターンを参照）。
 
 ---
 
 ## パターン別対応ガイド
 
 ISUCON の競技環境は毎年異なる。以下は頻出パターンへの対処法。
+
+### アプリが Docker Compose で動いている場合
+
+nginx / app / MySQL がすべてコンテナで動いている構成（private-isu など）。
+
+```bash
+# このリポジトリをホストに clone してから
+sudo bash scripts/setup-tools.sh
+sudo bash scripts/setup-app.sh
+DOCKER_COMPOSE_DIR=~/private-isu/webapp sudo bash scripts/setup-docker.sh
+```
+
+`setup-docker.sh` が行うこと:
+- `docker-compose.override.yml` を生成してコンテナのログをホストの `<compose-dir>/logs/` にマウント
+- nginx LTSV ログ設定をホスト側 conf.d に配置してリロード
+- `docker compose exec mysql mysql -e "SET GLOBAL slow_query_log = 1; ..."` でスロークエリログを有効化
+- `scripts/env-docker.sh` を生成（`analyze.sh` が自動 source）
+
+ベンチ後の分析:
+
+```bash
+# env-docker.sh は analyze.sh が自動で読む
+bash scripts/analyze.sh
+```
+
+nginx conf.d がデフォルトパス（`<compose-dir>/etc/nginx/conf.d`）と異なる場合:
+
+```bash
+NGINX_CONF_HOST_DIR=/path/to/nginx/conf.d DOCKER_COMPOSE_DIR=... sudo bash scripts/setup-docker.sh
+```
+
+---
 
 ### MySQL が AWS RDS の場合
 

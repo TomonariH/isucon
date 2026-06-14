@@ -8,6 +8,9 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
 
+# Docker 環境では setup-docker.sh が生成した env-docker.sh をここで読む
+[ -f "$SCRIPT_DIR/env-docker.sh" ] && source "$SCRIPT_DIR/env-docker.sh"
+
 # デフォルトパス（ISUCON環境に合わせて上書き可能）
 MYSQL_SLOW_LOG="${MYSQL_SLOW_LOG:-/var/log/mysql/slow.log}"
 ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"

@@ -1,0 +1,41 @@
+// Go アプリに pprof エンドポイントを追加するコードスニペット
+// main.go または router 初期化ファイルに追加する
+
+// ---- import に追加 ----
+import (
+	_ "net/http/pprof"  // 副作用インポート: /debug/pprof エンドポイントを登録する
+	"net/http"
+)
+
+// ---- main() または init() に追加 ----
+
+// デフォルトの http.ServeMux に /debug/pprof/* が自動登録される。
+// アプリが独自の mux を使っている場合は別ポートで起動する。
+go func() {
+	http.ListenAndServe(":6060", nil)  // pprof 専用ポート
+}()
+
+// ---- pprof の取得コマンド ----
+//
+// CPU プロファイル（30秒間）:
+//   go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+//
+// メモリプロファイル:
+//   go tool pprof http://localhost:6060/debug/pprof/heap
+//
+// goroutine ダンプ:
+//   curl -s http://localhost:6060/debug/pprof/goroutine?debug=1
+//
+// ブロッキング（mutex 競合）:
+//   go tool pprof http://localhost:6060/debug/pprof/block
+//
+// pprof UI（ブラウザで確認）:
+//   go tool pprof -http=:8081 http://localhost:6060/debug/pprof/profile?seconds=30
+//
+// ---- chi/echo/gin 等の独自 mux での登録例 ----
+//
+// e := echo.New()
+// e.GET("/debug/pprof/*", echo.WrapHandler(http.DefaultServeMux))
+//
+// r := chi.NewRouter()
+// r.Mount("/debug", middleware.Profiler())  // chi/middleware

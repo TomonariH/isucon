@@ -1,0 +1,13 @@
+# alp 設定ファイル
+# 競技アプリに合わせて uri_matching_groups を調整する
+sort: sum
+reverse: true
+output: count,method,uri,min,avg,max,sum,p99
+limit: 30
+
+uri_matching_groups:
+  # パスパラメータを正規化（競技アプリに合わせて追加）
+  - ^/posts/[0-9]+$
+  - ^/image/[0-9]+\.(jpg|jpeg|png|gif)$
+  - ^/@[a-zA-Z0-9_]+$
+  - ^/api/.*$

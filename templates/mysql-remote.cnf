@@ -1,0 +1,10 @@
+# MySQL 外部接続許可設定
+# 複数台構成で DB サーバーを app サーバーから接続する場合に使用
+# /etc/mysql/conf.d/remote.cnf として配置して mysql を再起動する
+
+[mysqld]
+# ループバックアドレスのみ → 全インターフェースで待ち受けに変更
+bind-address = 0.0.0.0
+
+# 接続数上限を増やす（多数の app サーバーからの接続に対応）
+max_connections = 500

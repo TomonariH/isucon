@@ -430,7 +430,7 @@ DB_HOST=<rds-endpoint> bash scripts/analyze-rds.sh
 - `mysql.slow_log` テーブル（TABLE モード）からスロークエリを取得して pt-query-digest で分析
 - TABLE モード未設定の場合のみ AWS CLI でログファイルを取得する（フォールバック）
 - デフォルトでは `mysql.slow_log` をローテートしない。リセットする場合のみ `ROTATE_RDS_SLOW_LOG=1` を指定する
-- `/etc/h2o/h2o.conf` が存在すれば H2O のアクセスログを自動検出（`analyze.sh` と同じ挙動）
+- H2O サービスが稼働していて `/etc/h2o/h2o.conf` が存在すれば H2O のアクセスログを自動検出（`analyze.sh` と同じ挙動）
 
 ---
 

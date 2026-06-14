@@ -7,6 +7,7 @@ ISUCON 競技向けスクリプト・スキル集。
 
 ```
 scripts/
+  install-claude.sh # Claude Code CLI をインストールする
   setup.sh          # 1台構成用ラッパー（下記4スクリプトをまとめて実行）
   setup-tools.sh    # alp / pt-query-digest インストール（分析実行サーバー）
   setup-nginx.sh    # nginx LTSV アクセスログ設定（nginx サーバー）
@@ -43,13 +44,17 @@ reports/                    # analyze.sh が生成するレポートの出力先
 
 ## 競技当日の使い方
 
-### Phase 1 — 競技開始直後（最初の 5 分）
+### Phase 0 — 事前準備
 
 ```bash
-# このリポジトリをサーバーに clone
 git clone <this-repo> ~/isucon-tools
 cd ~/isucon-tools
+bash scripts/install-claude.sh
 ```
+
+Claude Code がまだ入っていない端末では、リポジトリを clone した直後にこれを実行しておく。
+
+### Phase 1 — 競技開始直後（最初の 5 分）
 
 まず環境を調査してからセットアップ方針を決める:
 

@@ -194,20 +194,10 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 競技中の改善ループを以下の手順で実行せよ。
 
 前提:
-- `scripts/env.sh` の環境変数は既に利用可能なものとして扱う。
-- `TOOL_REPO` は ISUCON 運用ツールリポジトリのルートを指す。
-- ベンチ対象・アプリ修正・commit・worktree・merge は、`APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` のリポジトリで行う。
-- アプリの作業ディレクトリは `$ISUCON_WEBAPP_DIR` を使う。
-- rebuild/restart は `$REBUILD_CMD` を使う。
-- benchmark は `$BENCH_CMD` を使う。
-- rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` を使う。同じ排他ロックを取り、他エージェントの rebuild/restart/benchmark と同時に実行しない。
-- 候補評価でもフル再起動を標準にする。Docker Compose の `REBUILD_CMD` は原則 `build <app-service> && up -d` とし、nginx / MySQL / memcached 等の設定が再起動後も維持されることを毎回検証する。
-- `bench-locked.sh --rebuild` は再起動後、ベンチ前にその環境で必要なプロセスが起動していることを確認する。対象はアプリ、Web サーバー、DB、キャッシュ、キュー、外部接続用プロキシなど、競技アプリがリクエスト処理に必要とするものを環境に合わせて判断する。
-- benchmark 前にアクセスログとslow logをtruncateし、分析対象を1回分のベンチログに限定する。
-- ログ分析は `$TOOL_REPO/scripts/analyze.sh` を使う。
-- 高・中インパクト候補、評価結果、不採用worktreeの扱いは `$TOOL_REPO/scripts/improvement-log.sh` で記録する。
-- スコア記録は `$TOOL_REPO/scripts/score-log.sh` を使う。ただし記録する commit は `$APP_REPO` の HEAD とする。
 - 統合先ブランチは `$APP_REPO` の `feature/isucon-work` とする。
+- rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` で実行し、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+- 高・中インパクト候補、評価結果、不採用worktreeの扱いは `$TOOL_REPO/scripts/improvement-log.sh` で記録する。
+- merge 後の改善スコアは `$TOOL_REPO/scripts/score-log.sh` で記録する。
 - 各修正の merge 時は必ず commit を残す。squash しない。
 
 ループ:
@@ -228,10 +218,6 @@ Phase 2 〜 4 を制限時間まで繰り返す。
    - 各サブエージェントは rebuild/restart、benchmark、merge を実行しない。
    - rebuild/restart、benchmark、merge はメインエージェントだけが直列に実行する。
 7. 各修正ブランチごとに、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
-   - `$REBUILD_CMD` と `$BENCH_CMD` の間に他エージェントの rebuild/restart/benchmark を挟ませない。
-   - `$REBUILD_CMD` はフル再起動を標準にする。`--no-deps` 等のapp-only再起動は、ビルド確認やデバッグ時だけ使う。
-   - 再起動後は、ベンチ対象が正常にリクエストを処理できる状態になったことを確認してから benchmark を始める。Docker Compose なら compose 上の必要サービス、systemd なら該当 unit、複数台構成なら担当ホスト上の役割、外部DB/RDS等なら接続性を確認する。自動判定だけで足りない環境では `HEALTHCHECK_CMD` に実情に合う確認コマンドを設定する。
-   - benchmark 前にログがtruncateされるため、直後の `analyze.sh` はその評価1回分だけを読む。
    - 結果が pass しない場合、その修正は merge しない。
    - pass しても基準スコアより改善しない場合、その修正は merge しない。
    - スコアが明確に改善した場合のみ `feature/isucon-work` に merge する。
@@ -242,7 +228,6 @@ Phase 2 〜 4 を制限時間まで繰り返す。
    - pass し、スコア改善が維持される場合のみ merge を確定する。
    - 自動解決が不確実、またはスコア改善が消えた場合は、その修正は merge しない。
 9. merge 後、改善スコアを `$TOOL_REPO/scripts/score-log.sh` で記録する。
-   - `score-log.sh` は `$APP_REPO` の HEAD commit と `$TOOL_REPO` の HEAD commit を両方記録する。
 10. 手順4で抽出した全ての高・中インパクト提案を評価し終えたら、手順2に戻る。
    - 未mergeのworktree/branchは勝手に削除しない。
    - 残す、後で消す、再評価する、の判断を `$TOOL_REPO/scripts/improvement-log.sh cleanup ...` で記録する。

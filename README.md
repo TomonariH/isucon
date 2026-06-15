@@ -136,6 +136,65 @@ bash scripts/setup-app.sh
 
 ---
 
+### Phase 2.5 — pprof サイクル
+
+改善ループのスコアが伸び悩んだとき、alp・スロークエリでは見えないアプリ内部のCPUホットスポットを特定して修正する。Claude Code には次の手順をそのまま投げる。
+
+```text
+/goal
+pprof によるCPUホットスポット分析と修正を以下の手順で実行せよ。
+
+前提:
+- `scripts/env.sh` を Read して ISUCON_RUNTIME・ISUCON_WEBAPP_DIR・DOCKER_COMPOSE_DIR・REBUILD_CMD・BENCH_CMD を確認する。
+- 統合先ブランチは `$APP_REPO` の `feature/isucon-work` とする。
+- rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` で実行し、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+
+0. pprof が未導入なら導入する。
+   - Go アプリの main ファイルを探す: `find "$ISUCON_WEBAPP_DIR" -name "main.go" -o -name "app.go" | head -5`
+   - `import _ "net/http/pprof"` と `go func() { http.ListenAndServe("0.0.0.0:6060", nil) }()` が存在するか確認する。
+   - 存在しない場合: `templates/go-pprof.snippet` を参考に追加する。
+   - Docker Compose 環境の場合: `$DOCKER_COMPOSE_DIR/docker-compose.pprof.yml` に 127.0.0.1:6060:6060 のポート公開が存在するか確認する。存在しない場合は追加する。
+   - 変更があった場合: `$TOOL_REPO/scripts/bench-locked.sh --rebuild` で再ビルドする。
+   - 変更がなかった場合: リビルド不要。
+
+1. ベンチマークをバックグラウンドで起動し、同時にCPUプロファイルを取得する。
+   ```
+   PPROF_OUT="$TOOL_REPO/reports/pprof-$(date +%Y%m%d-%H%M%S)"
+   eval "$BENCH_CMD" > "${PPROF_OUT}-bench.txt" 2>&1 &
+   BENCH_PID=$!
+   sleep 5  # アプリが負荷を受け始めるまで待機
+   curl -s "http://localhost:6060/debug/pprof/profile?seconds=25" -o "${PPROF_OUT}.pprof"
+   wait $BENCH_PID
+   ```
+   - ベンチマーク結果（${PPROF_OUT}-bench.txt）からスコアを確認して記録する。
+
+2. プロファイルをテキストに変換してファイルに保存する。
+   ```
+   go tool pprof -top "${PPROF_OUT}.pprof" > "${PPROF_OUT}-top.txt"
+   echo "--- cum ---" >> "${PPROF_OUT}-top.txt"
+   go tool pprof -top -cum "${PPROF_OUT}.pprof" >> "${PPROF_OUT}-top.txt"
+   ```
+
+3. `/isucon-analyze ${PPROF_OUT}-top.txt` を呼び出して分析する。
+   - alp・スロークエリに加えて pprof の top/cum 結果も合わせて解釈する。
+
+4. 高・中インパクトの提案を抽出する。
+   - 提案がない（小インパクトのみ）なら終了する。
+
+5. 提案を1つにつき1つの独立 worktree/branch で並列修正する。
+   - Phase 2 の改善ループと同じルールに従う（最大5件並列、サブエージェントへ委譲）。
+   - 各修正を `$TOOL_REPO/scripts/bench-locked.sh --rebuild` で評価し、改善が確認できたものだけ `feature/isucon-work` に merge する。
+   - merge 後は `$TOOL_REPO/scripts/score-log.sh` でスコアを記録する。
+   - 全提案を評価したら手順1に戻る。
+
+禁止:
+- ベンチマーク実行中のリビルド・再起動
+- 複数提案を1つの worktree にまとめること
+- `git reset --hard` などの破壊的操作
+```
+
+---
+
 ## スクリプトリファレンス
 
 ### `scripts/analyze.sh`

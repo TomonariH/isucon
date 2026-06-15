@@ -83,6 +83,10 @@ log "Services: nginx=$NGINX_SERVICE mysql=$MYSQL_SERVICE"
 # ---- 1. ログディレクトリをホストに作成 ----
 LOG_DIR="$COMPOSE_DIR/logs"
 mkdir -p "$LOG_DIR/nginx" "$LOG_DIR/mysql"
+# MySQL ログは事前に作成して権限を開放する（コンテナ起動後は mysql ユーザー所有になるため）
+touch "$LOG_DIR/mysql/slow.log"
+chmod 666 "$LOG_DIR/mysql/slow.log"
+truncate -s 0 "$LOG_DIR/mysql/slow.log"
 log "Created: $LOG_DIR/{nginx,mysql}"
 
 # ---- 1b. MySQL slow query log 設定ファイルを作成 ----
@@ -130,17 +134,21 @@ compose_cmd() {
 # ---- 3. nginx LTSV 設定をホスト側のマウントパスに配置 ----
 NGINX_CONF_HOST_DIR="${NGINX_CONF_HOST_DIR:-$COMPOSE_DIR/etc/nginx/conf.d}"
 if [ -d "$NGINX_CONF_HOST_DIR" ]; then
-  if ! grep -ql 'ltsv' "$NGINX_CONF_HOST_DIR"/*.conf 2>/dev/null; then
-    cp "$SCRIPT_DIR/../templates/nginx-ltsv.conf" "$NGINX_CONF_HOST_DIR/ltsv.conf"
-    log "Applied nginx LTSV config: $NGINX_CONF_HOST_DIR/ltsv.conf"
+  # log_format ltsv の定義を配置する
+  if ! grep -ql 'log_format ltsv' "$NGINX_CONF_HOST_DIR"/*.conf 2>/dev/null; then
+    cp "$SCRIPT_DIR/../templates/nginx-00-ltsv.conf" "$NGINX_CONF_HOST_DIR/00-ltsv.conf"
+    log "Applied nginx LTSV log_format: $NGINX_CONF_HOST_DIR/00-ltsv.conf"
   else
-    log "nginx LTSV config already applied"
+    log "nginx LTSV log_format already defined"
   fi
-  if grep -rE '^\s*access_log\s+[^;]+;' "$NGINX_CONF_HOST_DIR" 2>/dev/null | grep -vq 'ltsv'; then
-    log "ERROR: some nginx access_log directives do not use ltsv."
-    log "  Update them before analyzing logs."
-    exit 1
-  fi
+  # access_log を各 server ブロックに注入する（http ブロックのデフォルト combined と混在しないよう server ブロックで上書き）
+  for conf in "$NGINX_CONF_HOST_DIR"/*.conf; do
+    [ -f "$conf" ] || continue
+    if grep -q 'listen ' "$conf" && ! grep -q 'access_log.*ltsv' "$conf"; then
+      sed -i 's/\(listen [^;]*;\)/\1\n  access_log \/var\/log\/nginx\/access.log ltsv;/' "$conf"
+      log "Injected LTSV access_log into: $conf"
+    fi
+  done
 else
   log "ERROR: $NGINX_CONF_HOST_DIR not found."
   log "  Set NGINX_CONF_HOST_DIR= to the host-mounted nginx conf.d directory."
@@ -181,8 +189,6 @@ fi
 # ---- 6. MySQL スロークエリログを有効化 ----
 log "Enabling MySQL slow query log..."
 compose_cmd exec -T "$MYSQL_SERVICE" chown mysql:mysql /var/log/mysql 2>/dev/null || true
-# slow.log を事前に作成して権限を開放する（コンテナ内 mysql ユーザー所有のままだと analyze.sh から読めない）
-compose_cmd exec -T "$MYSQL_SERVICE" bash -c 'touch /var/log/mysql/slow.log && chmod 666 /var/log/mysql/slow.log' 2>/dev/null || true
 # my.cnf で設定済みだが SET GLOBAL で即時反映する
 if compose_cmd exec -T "$MYSQL_SERVICE" mysql -u"$DB_ADMIN_USER" -p"$DB_ADMIN_PASS" -e "
       SET GLOBAL slow_query_log = 1;
@@ -197,6 +203,8 @@ fi
 # ---- 7. nginx をリロード ----
 if compose_cmd exec -T "$NGINX_SERVICE" nginx -s reload 2>/dev/null; then
   log "nginx reloaded with LTSV log format"
+  # access.log をホストユーザーが読み書きできるよう権限を開放してリセットする
+  compose_cmd exec -T "$NGINX_SERVICE" sh -c 'chmod 666 /var/log/nginx/access.log && truncate -s 0 /var/log/nginx/access.log' 2>/dev/null || true
 else
   log "WARNING: nginx reload failed. Check nginx config syntax."
 fi

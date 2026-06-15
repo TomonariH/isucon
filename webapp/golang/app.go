@@ -4,6 +4,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"crypto/sha512"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -30,6 +31,11 @@ import (
 var (
 	db    *sqlx.DB
 	store *gsm.MemcacheStore
+)
+
+var (
+	reAccountName = regexp.MustCompile(`\A[0-9a-zA-Z_]{3,}\z`)
+	rePassword    = regexp.MustCompile(`\A[0-9a-zA-Z_]{6,}\z`)
 )
 
 var (
@@ -120,8 +126,7 @@ func tryLogin(ctx context.Context, accountName, password string) *User {
 }
 
 func validateUser(accountName, password string) bool {
-	return regexp.MustCompile(`\A[0-9a-zA-Z_]{3,}\z`).MatchString(accountName) &&
-		regexp.MustCompile(`\A[0-9a-zA-Z_]{6,}\z`).MatchString(password)
+	return reAccountName.MatchString(accountName) && rePassword.MatchString(password)
 }
 
 func digest(ctx context.Context, src string) string {
@@ -151,11 +156,22 @@ func getSessionUser(r *http.Request) User {
 		return User{}
 	}
 
-	u := User{}
+	cacheKey := fmt.Sprintf("user_cache:%v", uid)
+	if item, err := memcacheClient.Get(cacheKey); err == nil {
+		u := User{}
+		if err2 := json.Unmarshal(item.Value, &u); err2 == nil {
+			return u
+		}
+	}
 
+	u := User{}
 	err := db.GetContext(ctx, &u, "SELECT * FROM `users` WHERE `id` = ?", uid)
 	if err != nil {
 		return User{}
+	}
+
+	if data, err2 := json.Marshal(u); err2 == nil {
+		memcacheClient.Set(&memcache.Item{Key: cacheKey, Value: data, Expiration: 60})
 	}
 
 	return u
@@ -835,6 +851,7 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 
 	for _, id := range r.Form["uid[]"] {
 		db.ExecContext(ctx, query, 1, id)
+		memcacheClient.Delete(fmt.Sprintf("user_cache:%s", id))
 	}
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)

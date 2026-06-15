@@ -3,6 +3,7 @@ ISUCONアプリの指定された問題を修正してください。
 引数: $ARGUMENTS
 
 修正前に必ず以下を確認する:
+0. `scripts/env.sh` を Read して環境情報を把握する（`ISUCON_WEBAPP_DIR`・`ISUCON_APP_LANG`・`DB_HOST`・`DB_USER`・`DB_PASS`・`DB_NAME`）
 1. 該当ファイルをReadして現在の実装を把握する
 2. 変更によってアプリの動作が壊れないか確認する（ベンチマークはfailスコアに厳しい）
 3. 修正はシンプルに留める（余計な抽象化を入れない）

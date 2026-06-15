@@ -4,6 +4,10 @@
 
 ## Steps
 
+0. **`scripts/env.sh` を Read して環境情報を把握する**
+
+   確認する変数: `ISUCON_RUNTIME`・`ISUCON_WEBAPP_DIR`・`NGINX_ACCESS_LOG`・`MYSQL_SLOW_LOG`・`DB_USER`・`DB_PASS`・`DB_NAME`
+
 1. **現在のサーバー構成を確認する**  
    ユーザーに以下を確認する:
    - 台数（2台 or 3台）
@@ -95,7 +99,8 @@
    bash scripts/analyze.sh
    
    # DB サーバーでスロークエリ分析（MySQL が DB サーバーにある場合）
-   MYSQL_SLOW_LOG=/var/log/mysql/slow.log bash scripts/analyze.sh
+   # MYSQL_SLOW_LOG は env.sh の値を使う（systemd なら /var/log/mysql/slow.log が多い）
+   MYSQL_SLOW_LOG="$MYSQL_SLOW_LOG" bash scripts/analyze.sh
    ```
 
    レポートを一か所に集める場合:

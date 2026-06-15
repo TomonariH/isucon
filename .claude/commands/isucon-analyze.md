@@ -1,6 +1,7 @@
 最新の計測レポートを読んでISUCONのボトルネックを分析し、改善優先順位TOP5を提示してください。
 
 手順:
+0. `scripts/env.sh` を Read して環境情報を把握する（`ISUCON_APP_LANG`・`NGINX_ACCESS_LOG`・`MYSQL_SLOW_LOG`）
 1. `reports/` ディレクトリの最新レポートファイル（日時が最も新しいもの）を読む
 2. alpのアクセスログ集計とpt-query-digestのスロークエリ集計を解析する
 3. 以下の観点でボトルネックを特定する:

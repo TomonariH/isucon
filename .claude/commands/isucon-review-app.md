@@ -1,7 +1,8 @@
 ISUCONアプリのコードを全ファイル読んで、パフォーマンス上の問題点をリストアップしてください。
 
 手順:
-1. まずWebアプリの実装ディレクトリを特定する（golang/ ruby/ python/ node/ php/ など）
+0. `scripts/env.sh` を Read して `ISUCON_WEBAPP_DIR` と `ISUCON_APP_LANG` を把握する
+1. `ISUCON_WEBAPP_DIR` 配下の `ISUCON_APP_LANG` に対応する実装ディレクトリを特定する（golang/ ruby/ python/ node/ php/ など）
 2. メインアプリファイル（ルーティング・DBアクセス・ビジネスロジック）を全て読む
 3. 以下のパターンを探して列挙する:
 

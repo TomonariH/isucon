@@ -50,9 +50,9 @@ run_alp() {
   echo ""
   echo '```'
   if [ -f "$ALP_CONFIG" ]; then
-    sudo cat "$ACCESS_LOG" | alp ltsv --config "$ALP_CONFIG" 2>&1 || true
+    cat "$ACCESS_LOG" | alp ltsv --config "$ALP_CONFIG" 2>&1 || true
   else
-    sudo cat "$ACCESS_LOG" | alp ltsv \
+    cat "$ACCESS_LOG" | alp ltsv \
       --sort sum \
       --reverse \
       --output "count,method,uri,min,avg,max,sum" \
@@ -83,7 +83,7 @@ run_pt_query_digest() {
   echo "## Slow Query Log (pt-query-digest) — Top queries by total time"
   echo ""
   echo '```'
-  sudo pt-query-digest "$MYSQL_SLOW_LOG" 2>/dev/null || true
+  pt-query-digest "$MYSQL_SLOW_LOG" 2>/dev/null || true
   echo '```'
   echo ""
 }
@@ -92,12 +92,8 @@ run_pt_query_digest() {
 rotate_logs() {
   if [ "${ROTATE_LOGS:-1}" = "1" ]; then
     log "Rotating logs for next benchmark..."
-    if [ -f "$ACCESS_LOG" ]; then
-      sudo truncate -s 0 "$ACCESS_LOG"
-    fi
-    if [ -f "$MYSQL_SLOW_LOG" ]; then
-      sudo truncate -s 0 "$MYSQL_SLOW_LOG"
-    fi
+    [ -f "$ACCESS_LOG" ] && truncate -s 0 "$ACCESS_LOG"
+    [ -f "$MYSQL_SLOW_LOG" ] && truncate -s 0 "$MYSQL_SLOW_LOG"
   fi
 }
 

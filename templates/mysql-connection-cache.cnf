@@ -1,0 +1,11 @@
+# MySQL connection/cache tuning template
+# Low-risk defaults for connection churn and temporary tables.
+# Keep values conservative on small Docker containers.
+
+[mysqld]
+skip_name_resolve = 1
+max_connections = 512
+thread_cache_size = 100
+table_open_cache = 2048
+tmp_table_size = 64M
+max_heap_table_size = 64M

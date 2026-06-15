@@ -1,0 +1,15 @@
+# MySQL buffer pool tuning template
+# Copy this as a separate conf.d file and replace <BUFFER_POOL_SIZE>.
+#
+# Docker example:
+#   source scripts/env.sh
+#   mkdir -p "$DOCKER_COMPOSE_DIR/etc/mysql"
+#   sed 's/<BUFFER_POOL_SIZE>/512M/g' \
+#     "$TOOL_REPO/templates/mysql-buffer-pool.cnf" \
+#     > "$DOCKER_COMPOSE_DIR/etc/mysql/20-buffer-pool.cnf"
+#
+# Evaluate one size at a time. For a 1GiB MySQL container, try 256M then 512M
+# before considering 768M.
+
+[mysqld]
+innodb_buffer_pool_size = <BUFFER_POOL_SIZE>

@@ -1,0 +1,10 @@
+# MySQL durability-relaxed tuning template
+# Competition-oriented setting. It can improve write-heavy workloads by reducing
+# fsync pressure, but it weakens crash durability.
+#
+# Use only after confirming the application can tolerate benchmark-time restart
+# semantics and initialization restores the dataset.
+
+[mysqld]
+innodb_flush_log_at_trx_commit = 2
+sync_binlog = 0

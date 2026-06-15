@@ -196,9 +196,6 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 前提:
 - 統合先ブランチは `$APP_REPO` の `feature/isucon-work` とする。
 - rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` で実行し、他エージェントの rebuild/restart/benchmark と同時に実行しない。
-- 高・中インパクト候補、評価結果、不採用worktreeの扱いは `$TOOL_REPO/scripts/improvement-log.sh` で記録する。
-- merge 後の改善スコアは `$TOOL_REPO/scripts/score-log.sh` で記録する。
-- 各修正の merge 時は必ず commit を残す。squash しない。
 
 ループ:
 1. `APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` を設定し、`$APP_REPO` の `feature/isucon-work` に移動する。
@@ -218,11 +215,9 @@ Phase 2 〜 4 を制限時間まで繰り返す。
    - 各サブエージェントは rebuild/restart、benchmark、merge を実行しない。
    - rebuild/restart、benchmark、merge はメインエージェントだけが直列に実行する。
 7. 各修正ブランチごとに、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
-   - 結果が pass しない場合、その修正は merge しない。
-   - pass しても基準スコアより改善しない場合、その修正は merge しない。
-   - スコアが明確に改善した場合のみ `feature/isucon-work` に merge する。
+   - pass し、基準スコアより明確に改善した修正だけを merge 対象にする。
    - 採否は `$TOOL_REPO/scripts/improvement-log.sh eval ...` で記録する。
-8. merge は `$APP_REPO` の `feature/isucon-work` に対して行い、merge commit または通常 commit を必ず残す。
+8. merge は `$APP_REPO` の `feature/isucon-work` に対して行い、commit を必ず残す。squash しない。
    - コンフリクトが出た場合は自動解決を試みる。
    - 解決後は、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
    - pass し、スコア改善が維持される場合のみ merge を確定する。
@@ -234,11 +229,8 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 11. `/isucon-analyze` の結果が小インパクトのみになるまで、このループを継続する。
 
 禁止:
-- rebuild/restart と benchmark の同時実行
-- pass していない修正の merge
-- スコアが改善していない修正の merge
-- unrelated changes の巻き戻し
 - `git reset --hard` などの破壊的操作
+- unrelated changes の巻き戻し
 - 複数提案を1つの worktree にまとめること
 ```
 

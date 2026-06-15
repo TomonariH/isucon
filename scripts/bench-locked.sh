@@ -9,6 +9,7 @@ LOCK_FILE="${ISUCON_LOCK_FILE:-/tmp/isucon-bench.lock}"
 RESET_LOGS_BEFORE="${RESET_LOGS_BEFORE:-1}"
 RUN_REBUILD="${RUN_REBUILD:-0}"
 SLEEP_AFTER_REBUILD="${SLEEP_AFTER_REBUILD:-2}"
+WAIT_SERVICES_TIMEOUT="${WAIT_SERVICES_TIMEOUT:-30}"
 
 usage() {
   cat <<'EOF'
@@ -20,8 +21,10 @@ Environment:
   REBUILD_CMD          rebuild/restart command from scripts/env.sh
   NGINX_ACCESS_LOG     access log truncated before benchmark by default
   MYSQL_SLOW_LOG       slow log truncated before benchmark by default
+  HEALTHCHECK_CMD      optional command checked before benchmark
   ISUCON_LOCK_FILE     lock path, default: /tmp/isucon-bench.lock
   RESET_LOGS_BEFORE    1 to truncate logs before benchmark, default: 1
+  WAIT_SERVICES_TIMEOUT seconds to wait for services, default: 30
 EOF
 }
 
@@ -62,9 +65,47 @@ truncate_log() {
   truncate -s 0 "$path"
 }
 
+wait_for_services() {
+  if [ -n "${HEALTHCHECK_CMD:-}" ]; then
+    echo "[bench-locked] waiting for HEALTHCHECK_CMD..."
+    local deadline=$((SECONDS + WAIT_SERVICES_TIMEOUT))
+    until eval "$HEALTHCHECK_CMD"; do
+      if [ "$SECONDS" -ge "$deadline" ]; then
+        echo "[bench-locked] HEALTHCHECK_CMD did not pass within ${WAIT_SERVICES_TIMEOUT}s" >&2
+        return 1
+      fi
+      sleep 1
+    done
+  fi
+
+  if [ "${ISUCON_RUNTIME:-}" = "docker" ] && [ -n "${DOCKER_COMPOSE_DIR:-}" ]; then
+    local compose_file="$DOCKER_COMPOSE_DIR/compose.yml"
+    [ -f "$compose_file" ] || compose_file="$DOCKER_COMPOSE_DIR/docker-compose.yml"
+    [ -f "$compose_file" ] || return 0
+
+    echo "[bench-locked] waiting for docker compose services..."
+    local expected running deadline
+    expected="$(docker compose -f "$compose_file" config --services | sort)"
+    deadline=$((SECONDS + WAIT_SERVICES_TIMEOUT))
+    while :; do
+      running="$(docker compose -f "$compose_file" ps --services --status running | sort)"
+      if [ "$expected" = "$running" ]; then
+        return 0
+      fi
+      if [ "$SECONDS" -ge "$deadline" ]; then
+        echo "[bench-locked] services are not all running within ${WAIT_SERVICES_TIMEOUT}s" >&2
+        docker compose -f "$compose_file" ps >&2 || true
+        return 1
+      fi
+      sleep 1
+    done
+  fi
+}
+
 flock "$LOCK_FILE" bash -lc '
   set -euo pipefail
   [ -f "'"$SCRIPT_DIR"'/env.sh" ] && source "'"$SCRIPT_DIR"'/env.sh"
+'"$(declare -f wait_for_services)"'
 
   if [ "'"$RESET_LOGS_BEFORE"'" = "1" ]; then
     [ -n "${NGINX_ACCESS_LOG:-}" ] && [ -f "$NGINX_ACCESS_LOG" ] && truncate -s 0 "$NGINX_ACCESS_LOG"
@@ -75,6 +116,9 @@ flock "$LOCK_FILE" bash -lc '
     eval "$REBUILD_CMD"
     sleep "'"$SLEEP_AFTER_REBUILD"'"
   fi
+
+  WAIT_SERVICES_TIMEOUT="'"$WAIT_SERVICES_TIMEOUT"'"
+  wait_for_services
 
   eval "$BENCH_CMD"
 '

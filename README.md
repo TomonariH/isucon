@@ -201,6 +201,8 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 - rebuild/restart は `$REBUILD_CMD` を使う。
 - benchmark は `$BENCH_CMD` を使う。
 - rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` を使う。同じ排他ロックを取り、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+- 候補評価でもフル再起動を標準にする。Docker Compose の `REBUILD_CMD` は原則 `build <app-service> && up -d` とし、nginx / MySQL / memcached 等の設定が再起動後も維持されることを毎回検証する。
+- `bench-locked.sh --rebuild` は再起動後、ベンチ前に全サービスが起動していることを確認する。
 - benchmark 前にアクセスログとslow logをtruncateし、分析対象を1回分のベンチログに限定する。
 - ログ分析は `$TOOL_REPO/scripts/analyze.sh` を使う。
 - 高・中インパクト候補、評価結果、不採用worktreeの扱いは `$TOOL_REPO/scripts/improvement-log.sh` で記録する。
@@ -227,6 +229,8 @@ Phase 2 〜 4 を制限時間まで繰り返す。
    - rebuild/restart、benchmark、merge はメインエージェントだけが直列に実行する。
 7. 各修正ブランチごとに、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
    - `$REBUILD_CMD` と `$BENCH_CMD` の間に他エージェントの rebuild/restart/benchmark を挟ませない。
+   - `$REBUILD_CMD` はフル再起動を標準にする。`--no-deps` 等のapp-only再起動は、ビルド確認やデバッグ時だけ使う。
+   - 再起動後、Docker Compose 環境では `docker compose ps --services --status running` が全サービスを返すまで待つ。追加の確認が必要な場合は `HEALTHCHECK_CMD` を設定する。
    - benchmark 前にログがtruncateされるため、直後の `analyze.sh` はその評価1回分だけを読む。
    - 結果が pass しない場合、その修正は merge しない。
    - pass しても基準スコアより改善しない場合、その修正は merge しない。
@@ -293,10 +297,15 @@ ROTATE_LOGS=0 bash scripts/analyze.sh
 bash scripts/bench-locked.sh
 
 # rebuild/restart と benchmark を同じ排他ロック内で連続実行
+# Docker Compose 環境では、再起動後に全サービスrunningを確認してからベンチする
 bash scripts/bench-locked.sh --rebuild
 
 # デバッグ時だけ、既存ログを残して実行
 bash scripts/bench-locked.sh --no-reset-logs
+
+# 追加の起動確認を入れる
+HEALTHCHECK_CMD='curl -fsS http://localhost/initialize >/dev/null' \
+bash scripts/bench-locked.sh --rebuild
 ```
 
 出力: benchmarker のJSON。直後に `bash scripts/analyze.sh` を実行すると、そのベンチ1回分だけを解析できる。

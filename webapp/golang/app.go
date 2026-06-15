@@ -156,18 +156,19 @@ func getSession(r *http.Request) *sessions.Session {
 }
 
 func getSessionUser(r *http.Request) User {
-	ctx := r.Context()
-	session := getSession(r)
-	uid, ok := session.Values["user_id"]
-	if !ok || uid == nil {
-		return User{}
-	}
-
+	// Check in-process cache first to avoid Memcached read on cache hits
 	cookie, cookieErr := r.Cookie("isuconp-go.session")
 	if cookieErr == nil && cookie.Value != "" {
 		if u, ok := sessionUserCache.Load(cookie.Value); ok {
 			return u.(User)
 		}
+	}
+
+	ctx := r.Context()
+	session := getSession(r)
+	uid, ok := session.Values["user_id"]
+	if !ok || uid == nil {
+		return User{}
 	}
 
 	cacheKey := fmt.Sprintf("user_cache:%v", uid)
@@ -494,11 +495,13 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("isuconp-go.session"); err == nil && cookie.Value != "" {
 		sessionUserCache.Delete(cookie.Value)
 	}
-	session := getSession(r)
-	delete(session.Values, "user_id")
-	session.Options = &sessions.Options{MaxAge: -1}
-	session.Save(r, w)
-
+	// Skip Memcached read/write — just expire the browser cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:   "isuconp-go.session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

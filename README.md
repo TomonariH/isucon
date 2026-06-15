@@ -330,23 +330,6 @@ sudo systemctl restart mysqld
 
 ---
 
-## テスト環境（~/private-isu）
-
-```bash
-cd ~/private-isu/webapp
-docker compose up -d
-
-cd ~/private-isu/benchmarker
-make  # 初回のみ
-./bin/benchmarker -t http://localhost:8080 -u ./userdata
-```
-
-スコア例: `{"pass":true,"score":1710,"success":1434,"fail":0,"messages":[]}`
-
-setup-docker.sh でログを自動的にホストに expose できる（下記 Docker Compose パターンを参照）。
-
----
-
 ## パターン別対応ガイド
 
 ISUCON の競技環境は毎年異なる。以下は頻出パターンへの対処法。

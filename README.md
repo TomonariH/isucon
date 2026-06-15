@@ -116,8 +116,6 @@ bash scripts/setup-app.sh
 /isucon-fix 画像をファイルシステムに移動して nginx で直接配信
 ```
 
-画像を nginx から直接配信する場合は `templates/nginx-staticfile.conf` をベースにする:
-
 ```bash
 # テンプレートは完全な server block 例。既存設定を置き換えず、
 # location /image/ など必要な差分だけを実際の nginx 設定へ反映する

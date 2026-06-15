@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	crand "crypto/rand"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/json"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "net/http/pprof"
@@ -32,6 +35,8 @@ var (
 	db    *sqlx.DB
 	store *gsm.MemcacheStore
 )
+
+var csrfSecret = []byte("sendagaya")
 
 var (
 	reAccountName = regexp.MustCompile(`\A[0-9a-zA-Z_]{3,}\z`)
@@ -86,6 +91,8 @@ type Comment struct {
 }
 
 var memcacheClient *memcache.Client
+
+var sessionUserCache sync.Map // session cookie value → User
 
 func init() {
 	memdAddr := os.Getenv("ISUCONP_MEMCACHED_ADDRESS")
@@ -156,10 +163,20 @@ func getSessionUser(r *http.Request) User {
 		return User{}
 	}
 
+	cookie, cookieErr := r.Cookie("isuconp-go.session")
+	if cookieErr == nil && cookie.Value != "" {
+		if u, ok := sessionUserCache.Load(cookie.Value); ok {
+			return u.(User)
+		}
+	}
+
 	cacheKey := fmt.Sprintf("user_cache:%v", uid)
 	if item, err := memcacheClient.Get(cacheKey); err == nil {
 		u := User{}
 		if err2 := json.Unmarshal(item.Value, &u); err2 == nil {
+			if cookieErr == nil && cookie.Value != "" {
+				sessionUserCache.Store(cookie.Value, u)
+			}
 			return u
 		}
 	}
@@ -174,6 +191,9 @@ func getSessionUser(r *http.Request) User {
 		memcacheClient.Set(&memcache.Item{Key: cacheKey, Value: data, Expiration: 60})
 	}
 
+	if cookieErr == nil && cookie.Value != "" {
+		sessionUserCache.Store(cookie.Value, u)
+	}
 	return u
 }
 
@@ -293,12 +313,13 @@ func isLogin(u User) bool {
 }
 
 func getCSRFToken(r *http.Request) string {
-	session := getSession(r)
-	csrfToken, ok := session.Values["csrf_token"]
-	if !ok {
+	cookie, err := r.Cookie("isuconp-go.session")
+	if err != nil || cookie.Value == "" {
 		return ""
 	}
-	return csrfToken.(string)
+	mac := hmac.New(sha256.New, csrfSecret)
+	mac.Write([]byte(cookie.Value))
+	return fmt.Sprintf("%x", mac.Sum(nil))
 }
 
 func secureRandomStr(b int) string {
@@ -394,7 +415,6 @@ func postLogin(w http.ResponseWriter, r *http.Request) {
 	if u != nil {
 		session := getSession(r)
 		session.Values["user_id"] = u.ID
-		session.Values["csrf_token"] = secureRandomStr(16)
 		session.Save(r, w)
 
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -465,13 +485,15 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session.Values["user_id"] = uid
-	session.Values["csrf_token"] = secureRandomStr(16)
 	session.Save(r, w)
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func getLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("isuconp-go.session"); err == nil && cookie.Value != "" {
+		sessionUserCache.Delete(cookie.Value)
+	}
 	session := getSession(r)
 	delete(session.Values, "user_id")
 	session.Options = &sessions.Options{MaxAge: -1}

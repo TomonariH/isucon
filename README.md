@@ -200,34 +200,48 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 - アプリの作業ディレクトリは `$ISUCON_WEBAPP_DIR` を使う。
 - rebuild/restart は `$REBUILD_CMD` を使う。
 - benchmark は `$BENCH_CMD` を使う。
-- rebuild/restart と benchmark は必ず同じ排他ロックを取り、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+- rebuild/restart と benchmark は必ず `$TOOL_REPO/scripts/bench-locked.sh` を使う。同じ排他ロックを取り、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+- benchmark 前にアクセスログとslow logをtruncateし、分析対象を1回分のベンチログに限定する。
 - ログ分析は `$TOOL_REPO/scripts/analyze.sh` を使う。
+- 高・中インパクト候補、評価結果、不採用worktreeの扱いは `$TOOL_REPO/scripts/improvement-log.sh` で記録する。
 - スコア記録は `$TOOL_REPO/scripts/score-log.sh` を使う。ただし記録する commit は `$APP_REPO` の HEAD とする。
 - 統合先ブランチは `$APP_REPO` の `feature/isucon-work` とする。
 - 各修正の merge 時は必ず commit を残す。squash しない。
 
 ループ:
 1. `APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` を設定し、`$APP_REPO` の `feature/isucon-work` に移動する。
-2. `$BENCH_CMD` を排他ロック付きで1回実行し、現在の基準スコアを確認する。
+2. `$TOOL_REPO/scripts/bench-locked.sh` を1回実行し、現在の基準スコアを確認する。
 3. `$TOOL_REPO/scripts/analyze.sh` を実行し、その結果を `/isucon-analyze` スキルで分析する。
 4. `/isucon-analyze` の結果から、高インパクト・中インパクトの提案だけを抽出する。
+   - 抽出した候補は、候補ごとに `$TOOL_REPO/scripts/improvement-log.sh candidate ...` で記録する。
+   - 候補ID、インパクト、難易度、予定ブランチ、改善方法を必ず残す。
 5. 抽出した提案が存在しない、つまり小インパクトのみになったら終了する。
 6. 高・中インパクトの提案を、提案項目1つにつき1つの独立 worktree/branch に分けて並列修正する。
    - ファイルやインパクトでまとめず、必ず提案単位で分ける。
    - 各作業ブランチは `feature/<短い内容>` のように命名する。
-   - 同時作業数は最大 5 件までに制限する。
-7. 各修正ブランチごとに、同じ排他ロックの中で `$REBUILD_CMD` を実行し、その後 `$BENCH_CMD` を実行する。
+   - メインエージェントは候補抽出、worktree/branch作成、評価、merge採否だけを担当する。
+   - 実装は候補ごとに別サブエージェントへ委譲する。同時実装数は最大5件までに制限する。
+   - 各サブエージェントは割り当てられた1候補・1worktreeのみを編集する。
+   - 各サブエージェントはコード修正、ローカルテスト、commit作成まで行い、結果をメインエージェントへ報告する。
+   - 各サブエージェントは rebuild/restart、benchmark、merge を実行しない。
+   - rebuild/restart、benchmark、merge はメインエージェントだけが直列に実行する。
+7. 各修正ブランチごとに、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
    - `$REBUILD_CMD` と `$BENCH_CMD` の間に他エージェントの rebuild/restart/benchmark を挟ませない。
+   - benchmark 前にログがtruncateされるため、直後の `analyze.sh` はその評価1回分だけを読む。
    - 結果が pass しない場合、その修正は merge しない。
    - pass しても基準スコアより改善しない場合、その修正は merge しない。
    - スコアが明確に改善した場合のみ `feature/isucon-work` に merge する。
+   - 採否は `$TOOL_REPO/scripts/improvement-log.sh eval ...` で記録する。
 8. merge は `$APP_REPO` の `feature/isucon-work` に対して行い、merge commit または通常 commit を必ず残す。
    - コンフリクトが出た場合は自動解決を試みる。
-   - 解決後は、同じ排他ロックの中で `$REBUILD_CMD` と `$BENCH_CMD` を連続実行する。
+   - 解決後は、`$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
    - pass し、スコア改善が維持される場合のみ merge を確定する。
    - 自動解決が不確実、またはスコア改善が消えた場合は、その修正は merge しない。
 9. merge 後、改善スコアを `$TOOL_REPO/scripts/score-log.sh` で記録する。
+   - `score-log.sh` は `$APP_REPO` の HEAD commit と `$TOOL_REPO` の HEAD commit を両方記録する。
 10. 手順4で抽出した全ての高・中インパクト提案を評価し終えたら、手順2に戻る。
+   - 未mergeのworktree/branchは勝手に削除しない。
+   - 残す、後で消す、再評価する、の判断を `$TOOL_REPO/scripts/improvement-log.sh cleanup ...` で記録する。
 11. `/isucon-analyze` の結果が小インパクトのみになるまで、このループを継続する。
 
 禁止:
@@ -272,6 +286,21 @@ ROTATE_LOGS=0 bash scripts/analyze.sh
 
 出力: `reports/YYYYMMDD-HHMMSS.md`
 
+### `scripts/bench-locked.sh`
+
+```bash
+# ベンチだけ実行。実行前にログをtruncateし、1回分のログ窓を作る
+bash scripts/bench-locked.sh
+
+# rebuild/restart と benchmark を同じ排他ロック内で連続実行
+bash scripts/bench-locked.sh --rebuild
+
+# デバッグ時だけ、既存ログを残して実行
+bash scripts/bench-locked.sh --no-reset-logs
+```
+
+出力: benchmarker のJSON。直後に `bash scripts/analyze.sh` を実行すると、そのベンチ1回分だけを解析できる。
+
 ### `scripts/score-log.sh`
 
 ```bash
@@ -282,7 +311,17 @@ bash scripts/score-log.sh 3200 "N+1解消"
 bash scripts/score-log.sh 5800 "画像をファイルシステムに移動"
 ```
 
-出力: `reports/scores.md`（なければ自動作成）
+出力: `reports/scores.md`（なければ自動作成）。`scripts/env.sh` から `ISUCON_WEBAPP_DIR` を読み、`APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` の HEAD commit を記録する。
+
+### `scripts/improvement-log.sh`
+
+```bash
+bash scripts/improvement-log.sh candidate C1 high low feature/cache-user "cache user lookup"
+bash scripts/improvement-log.sh eval C1 feature/cache-user 12345 true merged "improved baseline"
+bash scripts/improvement-log.sh cleanup feature/cache-user /tmp/wt kept "left for audit"
+```
+
+出力: `reports/improvement-loop.md`（候補、評価、worktree後片付け方針を追記）
 
 ### `scripts/alp.yml`
 

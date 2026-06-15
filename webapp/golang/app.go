@@ -726,7 +726,9 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 
 	ext := mimeToExt(mime)
 	if ext != "" {
-		os.WriteFile(fmt.Sprintf("/home/public/image/%d.%s", pid, ext), filedata, 0644)
+		imgData := make([]byte, len(filedata))
+		copy(imgData, filedata)
+		go os.WriteFile(fmt.Sprintf("/home/public/image/%d.%s", pid, ext), imgData, 0644)
 	}
 
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)

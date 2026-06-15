@@ -92,65 +92,7 @@ bash scripts/setup-app.sh
 
 ### Phase 2 — 改善ループ
 
-このフェーズでは、下の「ループ実行プロンプト」を使って改善を回す。
-
----
-
-### 単発改善フロー
-
-改善ループの外で、1つの問題を見つけて1つだけ直すときは以下を使う。
-
-#### Phase 3 — コードレビュー → 実装
-
-コードを読んでいない状態でも AI がボトルネックを列挙してくれる:
-
-```
-/isucon-review-app
-```
-
-特定の問題を修正させる場合:
-
-```
-/isucon-fix N+1クエリ: GET /posts のユーザー情報取得
-/isucon-fix posts テーブルの user_id にインデックスを追加
-/isucon-fix 画像をファイルシステムに移動して nginx で直接配信
-```
-
-```bash
-# テンプレートは完全な server block 例。既存設定を置き換えず、
-# location /image/ など必要な差分だけを実際の nginx 設定へ反映する
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-#### Phase 4 — 再ベンチ → スコア記録 → 継続判断
-
-```bash
-# ベンチ実行
-./benchmarker -t http://localhost:8080 -u ./userdata
-# {"pass":true,"score":3200,"success":2800,"fail":0,"messages":[]}
-
-# スコアを記録
-bash scripts/score-log.sh 3200 "posts.user_id にインデックス追加"
-
-# 次の手を聞く
-/isucon-analyze
-```
-
-`reports/scores.md` にスコア履歴が蓄積される:
-
-| Time | Score | Commit | Note |
-|------|-------|--------|------|
-| 2024-01-01 12:00:00 | **1710** | abc1234 | baseline |
-| 2024-01-01 12:30:00 | **3200** | def5678 | posts.user_id にインデックス追加 |
-| 2024-01-01 13:00:00 | **5800** | ghi9012 | 画像をファイルシステムに移動 |
-
-単発改善が終わったら、Phase 2 の改善ループに戻る。
-
----
-
-### ループ実行プロンプト
-
-複数エージェントで改善候補を並列実装し、改善したものだけを統合する場合は、Claude Code に以下を投げる。
+このフェーズでは、複数エージェントで改善候補を並列実装し、改善したものだけを統合する。Claude Code には次の手順をそのまま投げる。
 
 ```text
 /goal

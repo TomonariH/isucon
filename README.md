@@ -19,7 +19,7 @@ scripts/
   analyze-rds.sh    # RDS 環境向け分析（mysql.slow_log テーブル対応）
   score-log.sh      # スコアを reports/scores.md に記録
 templates/
-  nginx-ltsv.conf           # nginx LTSV アクセスログ設定
+  nginx-00-ltsv.conf        # nginx LTSV アクセスログ設定
   mysql-slow.cnf            # MySQL スロークエリログ設定
   nginx-staticfile.conf     # 静的ファイル直接配信設定（画像 DB 脱却後に使用）
   nginx-upstream.conf       # 複数台構成のロードバランシング設定
@@ -502,12 +502,12 @@ bash scripts/setup-app.sh
 
 ## テンプレートリファレンス
 
-### `templates/nginx-ltsv.conf`
+### `templates/nginx-00-ltsv.conf`
 
 nginx の access log を LTSV 形式で出力するための設定。手動で適用する場合:
 
 ```bash
-sudo cp templates/nginx-ltsv.conf /etc/nginx/conf.d/ltsv.conf
+sudo cp templates/nginx-00-ltsv.conf /etc/nginx/conf.d/ltsv.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 

@@ -90,47 +90,17 @@ bash scripts/setup-app.sh
 
 ---
 
-### Phase 2 — 初回ベンチマーク → 分析
+### Phase 2 — 改善ループ
 
-```bash
-# ベンチマーク実行（環境に合わせたコマンドで）
-./benchmarker -t http://localhost:8080 -u ./userdata
-
-# 計測・レポート生成（ベンチ後に毎回実行）
-bash scripts/analyze.sh
-```
-
-`analyze.sh` が行うこと:
-
-- `alp` でアクセスログを URI 別・合計レスポンスタイム順に集計
-- `pt-query-digest` でスロークエリを合計実行時間順に集計
-- `reports/20240101-120000.md` のようなタイムスタンプ付きファイルに出力
-- ログを次のベンチに備えて 0 バイトにリセット（`ROTATE_LOGS=0` で無効化）
-
-レポートが生成されたら Claude Code で分析:
-
-```
-/isucon-analyze
-```
-
-出力例:
-
-```
-## ボトルネック分析
-
-### TOP5 改善提案
-1. [高インパクト/低難易度] GET /posts — sum 42.3s。N+1 クエリが疑われる
-2. [高インパクト/低難易度] posts.user_id — インデックスなし、全スキャン
-3. [中インパクト/中難易度] GET /image/:id — 画像を DB から返している
-...
-
-### 推奨アクション
-posts.user_id にインデックスを追加する（実装 1 分、インパクト大）
-```
+このフェーズでは、下の「ループ実行プロンプト」を使って改善を回す。
 
 ---
 
-### Phase 3 — コードレビュー → 実装
+### 単発改善フロー
+
+改善ループの外で、1つの問題を見つけて1つだけ直すときは以下を使う。
+
+#### Phase 3 — コードレビュー → 実装
 
 コードを読んでいない状態でも AI がボトルネックを列挙してくれる:
 
@@ -154,9 +124,7 @@ posts.user_id にインデックスを追加する（実装 1 分、インパク
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
----
-
-### Phase 4 — 再ベンチ → スコア記録 → ループ
+#### Phase 4 — 再ベンチ → スコア記録 → 継続判断
 
 ```bash
 # ベンチ実行
@@ -166,10 +134,7 @@ sudo nginx -t && sudo systemctl reload nginx
 # スコアを記録
 bash scripts/score-log.sh 3200 "posts.user_id にインデックス追加"
 
-# 次の計測
-bash scripts/analyze.sh
-
-# Claude に次の手を聞く
+# 次の手を聞く
 /isucon-analyze
 ```
 
@@ -181,7 +146,7 @@ bash scripts/analyze.sh
 | 2024-01-01 12:30:00 | **3200** | def5678 | posts.user_id にインデックス追加 |
 | 2024-01-01 13:00:00 | **5800** | ghi9012 | 画像をファイルシステムに移動 |
 
-Phase 2 〜 4 を制限時間まで繰り返す。
+単発改善が終わったら、Phase 2 の改善ループに戻る。
 
 ---
 

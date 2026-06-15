@@ -185,6 +185,62 @@ Phase 2 〜 4 を制限時間まで繰り返す。
 
 ---
 
+### ループ実行プロンプト
+
+複数エージェントで改善候補を並列実装し、改善したものだけを統合する場合は、Claude Code に以下を投げる。
+
+```text
+/goal
+競技中の改善ループを以下の手順で実行せよ。
+
+前提:
+- `scripts/env.sh` の環境変数は既に利用可能なものとして扱う。
+- `TOOL_REPO` は ISUCON 運用ツールリポジトリのルートを指す。
+- ベンチ対象・アプリ修正・commit・worktree・merge は、`APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` のリポジトリで行う。
+- アプリの作業ディレクトリは `$ISUCON_WEBAPP_DIR` を使う。
+- rebuild/restart は `$REBUILD_CMD` を使う。
+- benchmark は `$BENCH_CMD` を使う。
+- rebuild/restart と benchmark は必ず同じ排他ロックを取り、他エージェントの rebuild/restart/benchmark と同時に実行しない。
+- ログ分析は `$TOOL_REPO/scripts/analyze.sh` を使う。
+- スコア記録は `$TOOL_REPO/scripts/score-log.sh` を使う。ただし記録する commit は `$APP_REPO` の HEAD とする。
+- 統合先ブランチは `$APP_REPO` の `feature/isucon-work` とする。
+- 各修正の merge 時は必ず commit を残す。squash しない。
+
+ループ:
+1. `APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` を設定し、`$APP_REPO` の `feature/isucon-work` に移動する。
+2. `$BENCH_CMD` を排他ロック付きで1回実行し、現在の基準スコアを確認する。
+3. `$TOOL_REPO/scripts/analyze.sh` を実行し、その結果を `/isucon-analyze` スキルで分析する。
+4. `/isucon-analyze` の結果から、高インパクト・中インパクトの提案だけを抽出する。
+5. 抽出した提案が存在しない、つまり小インパクトのみになったら終了する。
+6. 高・中インパクトの提案を、提案項目1つにつき1つの独立 worktree/branch に分けて並列修正する。
+   - ファイルやインパクトでまとめず、必ず提案単位で分ける。
+   - 各作業ブランチは `feature/<短い内容>` のように命名する。
+   - 同時作業数は最大 5 件までに制限する。
+7. 各修正ブランチごとに、同じ排他ロックの中で `$REBUILD_CMD` を実行し、その後 `$BENCH_CMD` を実行する。
+   - `$REBUILD_CMD` と `$BENCH_CMD` の間に他エージェントの rebuild/restart/benchmark を挟ませない。
+   - 結果が pass しない場合、その修正は merge しない。
+   - pass しても基準スコアより改善しない場合、その修正は merge しない。
+   - スコアが明確に改善した場合のみ `feature/isucon-work` に merge する。
+8. merge は `$APP_REPO` の `feature/isucon-work` に対して行い、merge commit または通常 commit を必ず残す。
+   - コンフリクトが出た場合は自動解決を試みる。
+   - 解決後は、同じ排他ロックの中で `$REBUILD_CMD` と `$BENCH_CMD` を連続実行する。
+   - pass し、スコア改善が維持される場合のみ merge を確定する。
+   - 自動解決が不確実、またはスコア改善が消えた場合は、その修正は merge しない。
+9. merge 後、改善スコアを `$TOOL_REPO/scripts/score-log.sh` で記録する。
+10. 手順4で抽出した全ての高・中インパクト提案を評価し終えたら、手順2に戻る。
+11. `/isucon-analyze` の結果が小インパクトのみになるまで、このループを継続する。
+
+禁止:
+- rebuild/restart と benchmark の同時実行
+- pass していない修正の merge
+- スコアが改善していない修正の merge
+- unrelated changes の巻き戻し
+- `git reset --hard` などの破壊的操作
+- 複数提案を1つの worktree にまとめること
+```
+
+---
+
 ## スクリプトリファレンス
 
 ### `scripts/setup.sh`

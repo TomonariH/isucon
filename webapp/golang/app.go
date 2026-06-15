@@ -899,6 +899,9 @@ func main() {
 		log.Fatalf("Failed to connect to DB: %s.", err.Error())
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(32)
+	db.SetMaxIdleConns(32)
+	db.SetConnMaxLifetime(0)
 
 	initTemplates()
 	r := chi.NewRouter()

@@ -3,7 +3,7 @@ ISUCONアプリの指定された問題を修正してください。
 引数: $ARGUMENTS
 
 修正前に必ず以下を確認する:
-0. `scripts/env.sh` を Read して環境情報を把握する（`ISUCON_WEBAPP_DIR`・`ISUCON_APP_LANG`・`DB_HOST`・`DB_USER`・`DB_PASS`・`DB_NAME`）
+0. `scripts/env.sh` を Read して環境情報を把握する（`ISUCON_WEBAPP_DIR`・`ISUCON_APP_LANG`・`DB_HOST`・`DB_USER`・`DB_PASS`・`DB_NAME`・`REBUILD_CMD`・`BENCH_CMD`）
 1. 該当ファイルをReadして現在の実装を把握する
 2. 変更によってアプリの動作が壊れないか確認する（ベンチマークはfailスコアに厳しい）
 3. 修正はシンプルに留める（余計な抽象化を入れない）
@@ -33,4 +33,6 @@ ISUCONアプリの指定された問題を修正してください。
 修正後:
 - 変更内容を簡潔に説明する
 - `git diff` で変更箇所を確認するよう促す
-- ベンチマークを再実行して `scripts/score-log.sh <score> "<メモ>"` でスコアを記録するよう促す
+- `REBUILD_CMD` が空でなければそのコマンドを出力して再ビルド・再起動を促す
+- `BENCH_CMD` が空でなければそのコマンドを出力してベンチマーク実行を促す
+- ベンチマーク後は `scripts/score-log.sh <score> "<メモ>"` でスコアを記録するよう促す

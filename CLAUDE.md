@@ -1,77 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Project Overview
+## Repository Purpose
 
-このリポジトリはISUCON（Webパフォーマンスチューニングコンテスト）向けのスキル・スクリプト集。
-競技本番で再利用できる汎用的な最適化手順、ツール、テンプレートを提供する。
+このリポジトリは ISUCON 競技向けのスキル、スクリプト、テンプレート、運用 reference を管理する。
+競技本番で再利用できる汎用手順を保つことを優先し、特定の練習環境・競技回・サーバー構成に依存する情報はここに固定しない。
 
-テスト環境として `~/private-isu` を使用する。スキルやスクリプトの動作検証・性能計測はすべてそこで行う。
+## Context Rules
 
-## Test Environment: ~/private-isu
+- 実行環境は推測しない。作業前に `scripts/env.sh`、`reports/survey.md`、最新 `reports/*.md`、対象アプリの設定を読む。
+- private-isu などの練習環境固有のパス、DB名、ベンチコマンド、既知ボトルネックを前提にしない。
+- ISUCON のレギュレーション、サーバー台数、入口 URL、再起動方法は競技ごとに変わる。ローカル資料がなければユーザーに確認する。
+- `/goal` の手順は README から参照される `references/` を正本にする。
+- Phase の責務境界を守る。特に Phase 4 で Phase 6 の最終提出作業を実施しない。
 
-`~/private-isu` はISUCONの練習環境（SNS風Webアプリ）。
+## Safety Rules
 
-### 起動
+- benchmark / rebuild / restart は `scripts/bench-locked.sh` 経由で直列化する。
+- fail が出た場合は推測で戻さず、benchmark messages、app/nginx/MySQL/cache ログ、access log、slow query から原因を特定する。
+- `git reset --hard` などの破壊的操作は禁止。
+- ユーザーや他エージェントの未コミット変更を巻き戻さない。
+- 本番環境に影響する変更は、根拠、検証方法、ロールバック方法を明確にする。
 
-```bash
-cd ~/private-isu/webapp
-docker compose up -d
-```
+## Repository Map
 
-### ベンチマーク実行
+- `scripts/`: 環境調査、分析、ベンチ排他、スコア記録、セットアップ用 shell
+- `templates/`: nginx / MySQL / Redis / memcached / pprof などの設定テンプレート
+- `references/`: `/goal` 共通ルール、エージェントルール、オーケストレーション、Phase 別手順
+- `.claude/commands/`: Claude Code 用 ISUCON スキル定義
+- `.codex/skills/`: Codex 用 skill wrapper
+- `reports/`: 調査・分析・評価結果の出力先
 
-```bash
-cd ~/private-isu/benchmarker
-make  # 初回のみビルド
-./bin/benchmarker -t "http://localhost:8080" -u ./userdata
-```
+## Development Notes
 
-スコア例: `{"pass":true,"score":1710,"success":1434,"fail":0,"messages":[]}`
-
-### 初期化
-
-```bash
-cd ~/private-isu
-make init  # dump.sql.bz2 と画像ファイルをダウンロード
-```
-
-### アーキテクチャ
-
-- MySQL 8.4（users / posts / comments テーブル）
-- Memcached（セッション管理）
-- Nginx（リバースプロキシ）
-- 実装言語：Ruby（デフォルト）/ Go / PHP / Python / Node.js
-
-### 主な性能ボトルネック（検証対象）
-
-- 画像をDBのBLOBとして保存
-- タイムライン生成のN+1クエリ
-- DBインデックス未設定
-- セッションをDBに保存
-
-## Repository Structure
-
-```
-/                    # スキル・スクリプト置き場（今後追加予定）
-~/private-isu/       # テスト環境（このリポジトリ外）
-```
-
-## Development Flow
-
-1. スキル・スクリプトを本リポジトリに追加・修正する
-2. `~/private-isu` に適用して動作確認する
-3. ベンチマーカーでスコアを計測して効果を検証する
-4. 結果をコミットに記録する
-
-## Environment Variables (private-isu)
-
-| 変数名 | 説明 |
-|--------|------|
-| `ISUCONP_DB_HOST` | DBホスト |
-| `ISUCONP_DB_PORT` | DBポート（3306） |
-| `ISUCONP_DB_USER` | DBユーザー |
-| `ISUCONP_DB_PASSWORD` | DBパスワード |
-| `ISUCONP_DB_NAME` | DB名（isuconp） |
-| `ISUCONP_MEMCACHED_ADDRESS` | Memcachedアドレス |
+- 汎用性を壊す環境固有値は README / AGENTS / CLAUDE に追加しない。
+- 環境固有の結果は `reports/` に記録する。
+- 競技手順の共通化は `references/`、実行可能な補助処理は `scripts/`、設定例は `templates/` に置く。

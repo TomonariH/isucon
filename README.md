@@ -237,7 +237,7 @@ frontend ALB と backend ALB は分けて扱う。frontend task から backend A
 
 `/isucon-survey` が AWS credential / region を確認し、AWS managed 構成なら内部で AWS 全体の構造と backend ECS service の詳細を調査する。`reports/aws-survey.md` と `reports/ecs-survey.md` を材料に、backend service、backend ALB、Aurora cluster、benchmark SQS queue を特定し、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
 
-SQS 経由で benchmark を起動する環境では、最低限次を埋める。
+SQS 経由で benchmark を起動する環境では、`/isucon-survey` が探索できる範囲で最低限次を埋める。
 
 ```bash
 export DB_TYPE='aurora'
@@ -250,10 +250,9 @@ export BACKEND_ALB_NAME='<backend-alb-name>'
 export BACKEND_ALB_PROTOCOL='http'
 export BENCH_QUEUE_NAME='<benchmark-queue-name>'
 export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'
-export BENCH_MESSAGE_BODY='{"target_url":"{{BENCH_TARGET_URL}}"}'
 ```
 
-SQS message body は大会ごとに違うため、配布資料に合わせて `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE` を差し替える。URL を JSON 文字列として埋め込む場合は `{{BENCH_TARGET_URL_JSON}}` のような `_JSON` suffix の placeholder を使う。
+SQS message body は大会ごとに違うため、自動探索で確定しない場合は `/isucon-survey` が配布資料、マニュアル URL、スクリーンショットの提示を求める。確認できた形式に合わせて `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE` を設定する。URL を JSON 文字列として埋め込む場合は `{{BENCH_TARGET_URL_JSON}}` のような `_JSON` suffix の placeholder を使う。
 
 ### `/goal` の Phase 指定
 

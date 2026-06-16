@@ -305,10 +305,9 @@ flowchart TD
   S --> T
   T -- "Yes" --> U["git merge feature/..."]
   U --> V["bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  V --> W["bash scripts/improvement-log.sh eval ..."]
   T -- "No" --> X["git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  X --> Y["bash scripts/improvement-log.sh eval ..."]
-  W --> J
+  V --> Y["bash scripts/improvement-log.sh eval ..."]
+  X --> Y
   Y --> J
 ```
 

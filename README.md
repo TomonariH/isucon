@@ -282,31 +282,31 @@ compact や中断から復帰した場合は、作業再開前に `references/ec
 
 ```mermaid
 flowchart TD
-  A["/goal phase2"] --> B["source scripts/env.sh"]
-  B --> C["bash scripts/ecs/bench-locked.sh --analyze"]
-  C --> D["BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
-  D --> E["bash scripts/ecs/analyze.sh"]
-  E --> F{"CloudWatch / PI<br/>publish 済み?"}
-  F -- "No" --> G["BENCH_START_EPOCH=&lt;epoch&gt;<br/>bash scripts/ecs/analyze.sh"]
+  A["/goal phase2"] --> B["環境変数を読み込む<br/>source scripts/env.sh"]
+  B --> C["baseline を測る<br/>bash scripts/ecs/bench-locked.sh --analyze"]
+  C --> D["ベンチを起動する<br/>BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
+  D --> E["結果を解析する<br/>bash scripts/ecs/analyze.sh"]
+  E --> F{"CloudWatch / PI<br/>メトリクス反映済み?"}
+  F -- "No" --> G["数分待って同じ窓で再解析する<br/>BENCH_START_EPOCH=&lt;epoch&gt;<br/>bash scripts/ecs/analyze.sh"]
   G --> F
-  F -- "Yes" --> H["bash scripts/score-log.sh &lt;score&gt; 'ecs baseline'"]
+  F -- "Yes" --> H["baseline score を記録する<br/>bash scripts/score-log.sh &lt;score&gt; 'ecs baseline'"]
   H --> I["/isucon-analyze"]
-  I --> J["bash scripts/improvement-log.sh candidate ..."]
-  J --> K["git worktree add ... -b feature/...<br/>候補ごとに修正"]
-  K --> L["bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  L --> M["REBUILD_CMD<br/>bash scripts/ecs/deploy.sh"]
-  M --> N["bash scripts/ecs/wait-stable.sh"]
-  N --> O["BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
-  O --> P["bash scripts/ecs/analyze.sh"]
+  I --> J["候補を記録する<br/>bash scripts/improvement-log.sh candidate ..."]
+  J --> K["候補用 worktree を作る<br/>git worktree add ... -b feature/...<br/>候補ごとに修正"]
+  K --> L["修正を反映して評価する<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  L --> M["image を deploy する<br/>REBUILD_CMD<br/>bash scripts/ecs/deploy.sh"]
+  M --> N["service stable を待つ<br/>bash scripts/ecs/wait-stable.sh"]
+  N --> O["ベンチを起動する<br/>BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
+  O --> P["結果を解析する<br/>bash scripts/ecs/analyze.sh"]
   P --> Q{"公式 score 取得済み?"}
-  Q -- "Yes" --> R["bash scripts/score-log.sh &lt;score&gt; &lt;note&gt;"]
+  Q -- "Yes" --> R["score を記録する<br/>bash scripts/score-log.sh &lt;score&gt; &lt;note&gt;"]
   Q -- "No" --> S["ALB RequestCount / p99 / PI AAS<br/>で暫定比較"]
   R --> T{"採用?"}
   S --> T
-  T -- "Yes" --> U["git merge feature/..."]
-  U --> V["bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  T -- "No" --> X["git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  V --> Y["bash scripts/improvement-log.sh eval ..."]
+  T -- "Yes" --> U["採用 branch を統合する<br/>git merge feature/..."]
+  U --> V["merge 後に再評価する<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  T -- "No" --> X["baseline に戻す<br/>git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  V --> Y["評価結果を記録する<br/>bash scripts/improvement-log.sh eval ..."]
   X --> Y
   Y --> J
 ```

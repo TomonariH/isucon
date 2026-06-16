@@ -154,5 +154,5 @@ else
   echo "| n/a | (PI 無効 or datapoint なし) |"
 fi
 echo ""
-echo "_AAS=Average Active Sessions。Performance Insights が有効で IAM に pi:GetResourceMetrics / rds:DescribeDBInstances が必要。_"
+echo "_AAS=Average Active Sessions。Performance Insights が有効で IAM に pi:GetResourceMetrics / rds:DescribeDBInstances が必要。PI には publish 遅延（数分）があり、ベンチ直後は窓の最新分が過小に出うる。正確な値は数分後に \`BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh\` で再取得する。_"
 echo ""

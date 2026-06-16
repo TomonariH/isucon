@@ -208,5 +208,5 @@ else
   echo ""
 fi
 
-echo "_n/a は当該メトリクス未対応・窓内 datapoint なし・dimension/権限不足のいずれか。_"
+echo "_n/a は当該メトリクス未対応・窓内 datapoint なし・dimension/権限不足のいずれか。CloudWatch メトリクスは publish 遅延（数分）があり、ベンチ直後は窓の最新分が過小/n/a になりうる。正確な値は数分後に \`BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh\` で再取得する。_"
 echo ""

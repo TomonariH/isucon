@@ -136,6 +136,8 @@ main() {
     run_pi
     echo "---"
     echo ""
+    echo "_Note: CloudWatch メトリクス/PI は publish 遅延があるため、数値が過小に見える場合はベンチ完了の数分後に \`BENCH_START_EPOCH=<bench epoch> bash scripts/ecs/analyze.sh\` で再実行する。_"
+    echo ""
     echo "_Ask Claude: \`/isucon-analyze\` to get optimization suggestions based on this report._"
   } > "$REPORT_FILE"
   log "done: $REPORT_FILE"

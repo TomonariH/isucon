@@ -474,6 +474,14 @@ bash scripts/improvement-log.sh eval C1 feature/cache-user 12345 true merged "im
 bash scripts/improvement-log.sh cleanup feature/cache-user /tmp/wt kept "left for audit"
 ```
 
+### `scripts/ecs/iam-check.sh`
+
+競技 IAM role が `analyze.sh` の依存 AWS API（sts / ecs / ecr / elbv2 / logs / cloudwatch / rds / pi / ec2 / sqs）に到達できるかを read-only で 1 回ずつ叩き、`| action | result | note |` の markdown table（result は OK / DENIED / OTHER / SKIP）で出す。DENIED は analyze の該当セクションが `n/a` に落ちる理由＝「データなし」ではない。DENIED の action と選んだ `SKIP_*`（`SKIP_CW_METRICS` / `SKIP_PI` など）を `reports/survey.md` に記録する。Phase1 の計測チェーンゲート前に実行する。
+
+```bash
+bash scripts/ecs/iam-check.sh
+```
+
 ### `scripts/ecs/discover.sh`
 
 AWS account 内の ECS cluster/service、ALB、target group、RDS/Aurora、SQS、ECR、CloudWatch Logs を広く調査し、`reports/aws-survey.md` を生成する。Fargate/ALB/Aurora 環境では `/isucon-survey` の初動でこれを実行し、backend service と benchmark queue を特定してから `scripts/ecs/survey.sh` に進む。

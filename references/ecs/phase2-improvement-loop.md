@@ -12,6 +12,9 @@
 ## Procedure
 
 - 前提: baseline を取る前に、Phase1 の「計測チェーン疎通ゲート」（nginx LTSV / Aurora slow query or Performance Insights / 非空 analyze）を通過していること（`references/ecs/phase1-survey.md` の "Verify Measurement Chain (Phase2 入場ゲート)" 参照）。通過していなければ最初の analyze が空になるので、まず計測を直す。
+- CloudWatch メトリクス / PI には publish 遅延（数分）がある。CPU / AAS / 接続数の正確な比較が要るときは、ベンチ完了の数分後に `BENCH_START_EPOCH=<bench epoch> bash scripts/ecs/analyze.sh` で再 analyze する（直後の値は窓の最新分が過小/n/a になりうる）。
+- 公式 score の自動取得が未確定（P0-B / Phase1 待ち）の間は、`scripts/ecs/analyze.sh` の ALB `RequestCount`（window 合計）と `TargetResponseTime` p99、Performance Insights の Total DB Load(AAS) を**暫定ランキング指標**にして候補を一次選別する（多くの ISUCON は throughput 連動なので RequestCount 増 / p99 減 / AAS 減が代理になる）。公式 score が取れたら `score-log.sh` で確定記録する。
+- 候補を却下する場合は統合 branch を再 deploy して baseline 構成に戻してから次の候補を評価する（改悪 image を動かしたままにしない）。
 
 1. app repo を確認し、統合 branch に移動する。
 2. baseline を取る。

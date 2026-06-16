@@ -90,6 +90,17 @@ export BENCH_RESULT_MARGIN_SEC='15'
    aws sqs get-queue-url --queue-name "$BENCH_QUEUE_NAME"
    ```
 
+## Verify IAM Reach
+
+`scripts/ecs/analyze.sh` は多数の AWS API に依存し、競技 IAM role が一部を拒否しても各セクションが黙って `n/a` に落ちる（scripts が `|| echo '{}'` でエラーを握りつぶす）。「拒否」と「データなし」を区別するため、計測チェーンに入る前に到達性を確認する。
+
+```bash
+bash scripts/ecs/iam-check.sh
+```
+
+- DENIED の action と、選んだ `SKIP_*`（例: `SKIP_CW_METRICS=1` / `SKIP_PI=1`）を `reports/survey.md` に記録する。
+- DENIED の metrics / PI / logs は analyze の該当セクションが `n/a` になる理由＝「データなし」ではない。混同しない。
+
 ## Verify Benchmark Request
 
 SQS benchmark request は必ず dry-run で message body を確認してから実送信する。
@@ -157,6 +168,13 @@ aws rds describe-db-parameters \
    出力が combined など LTSV 以外なら、**image 側 nginx config を LTSV 化（`templates/nginx-00-ltsv.conf` 参照）して deploy** する。running container 内を直接編集しない。これは Phase4 の作業ではなく Phase1 で済ませる。
 
 2. Aurora の slow query が読めること。cluster / instance parameter group で `slow_query_log=1` + `log_output=TABLE`（上記 "Verify Aurora Slow Query" 参照）。**または** Performance Insights が有効であること。PI が有効なら mysql 直結不要で、クエリを DB Load 順に順位付けできる（VPC 外の workstation から Aurora に到達できない場合の代替になる）。
+
+   PI が無効なら次で有効化できる（Aurora MySQL は再起動不要・無料枠7日保持、observability 設定でありスペック/構成変更ではない）。
+
+   ```bash
+   aws rds modify-db-instance --db-instance-identifier <id> --enable-performance-insights --apply-immediately
+   aws rds describe-db-instances --query 'DBInstances[0].PerformanceInsightsEnabled'
+   ```
 
 3. baseline ベンチ→`scripts/ecs/analyze.sh` の出力が **NON-EMPTY** であることを確認してから Phase2 に入る。
 

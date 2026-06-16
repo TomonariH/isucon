@@ -27,6 +27,7 @@
 - ファイルや領域でまとめず、提案項目1つにつき1つの独立 branch / worktree に分ける。
 - 複数提案を1つの worktree にまとめない。
 - benchmark は直列化する。並列実行しない。
+- ECS では bench は `bench-locked.sh` の flock で直列だが、候補ごとの image build / ECR push は worktree 並列で先行実行しておける。これで bench 待ち行列の回転を上げられる（ただし deploy + bench 自体は 1 つずつ）。
 
 ## Candidate Selection
 

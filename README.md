@@ -228,55 +228,15 @@ compact や中断から復帰した場合は、作業再開前に `goal-common.m
 
 ## Fargate/ALB/Aurora 環境の戦い方
 
-Fargate + ALB + Aurora MySQL 環境では、既存の `systemd` / Docker Compose 向け Phase 手順に条件分岐を足さず、`references/ecs/` を正本にする。作業場所は ECS task 内ではなく、AWS CLI と Docker が使えるローカル端末または作業用 EC2 を基本にする。
-
-ECS task は入れ替わる前提なので、running container 内で直接設定を書き換えない。変更は app repo、Docker image、ECR tag、ECS service/task definition、RDS parameter group に反映する。
-
-frontend ALB と backend ALB は分けて扱う。frontend task から backend ALB へアクセスし、benchmark は NAT Gateway 経由で backend ALB を叩く想定なら、`BENCH_CMD='bash scripts/ecs/bench-sqs.sh'` とし、SQS queue に backend ALB URL を送る。
-
-作業端末には AWS CLI、Docker、python3、alp、RDS 解析に必要な mysql client / pt-query-digest を用意する。alp や pt-query-digest は通常 `scripts/setup-tools.sh` で入れる。
-
-### 対応モデル
-
-| 構成 | 方針 | 主な script |
-|---|---|---|
-| ECS Fargate / ECS on EC2 | task 内を直接変更せず、image build / ECR push / ECS service update で反映する | `scripts/ecs/deploy.sh`, `scripts/ecs/bench-locked.sh` |
-| ECS + backend ALB + SQS benchmark | backend ALB URL を解決し、SQS に benchmark request を送る | `scripts/ecs/resolve-alb-url.sh`, `scripts/ecs/bench-sqs.sh` |
-| ECS nginx container | CloudWatch Logs の stdout を alp 入力にする。LTSV でなければ image 側 nginx config を直す | `scripts/ecs/logs.sh`, `scripts/ecs/analyze.sh` |
-| EC2 + nginx process | ローカル access log を読む従来手順を使う | `scripts/setup-nginx.sh`, `scripts/analyze.sh` |
-| Docker Compose nginx container | host に expose した access log を読む従来手順を使う | `scripts/setup-docker.sh`, `scripts/analyze.sh` |
-| Aurora MySQL | cluster parameter group と instance parameter group を両方確認し、`mysql.slow_log` を読む | `scripts/analyze-rds.sh`, `templates/rds-parameter-group.md` |
-| RDS MySQL | DB parameter group を確認し、`mysql.slow_log` を読む | `scripts/setup-rds.sh`, `scripts/analyze-rds.sh` |
-| self-managed MySQL on EC2 | MySQL conf を直接変更し、slow log file を読む | `scripts/setup-mysql.sh`, `scripts/analyze.sh` |
-
 ### 初動
 
 ```text
 /isucon-survey
 ```
 
-`/isucon-survey` が AWS credential / region を確認し、AWS managed 構成なら内部で AWS 全体の構造と backend ECS service の詳細を調査する。`reports/aws-survey.md` と `reports/ecs-survey.md` を材料に、backend service、backend ALB、Aurora cluster、benchmark SQS queue を特定し、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
-
-SQS 経由で benchmark を起動する環境では、`/isucon-survey` が探索できる範囲で最低限次を埋める。
-
-```bash
-export DB_TYPE='aurora'
-export ECR_REPOSITORY='<repository-name>'
-export RDS_CLUSTER='<aurora-cluster-id>'
-export RDS_CLUSTER_PARAM_GROUP='<aurora-cluster-parameter-group>'
-export RDS_INSTANCE='<db-instance-id>'
-export RDS_PARAM_GROUP='<db-instance-parameter-group>'
-export BACKEND_ALB_NAME='<backend-alb-name>'
-export BACKEND_ALB_PROTOCOL='http'
-export BENCH_QUEUE_NAME='<benchmark-queue-name>'
-export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'
-```
-
-SQS message body は大会ごとに違うため、自動探索で確定しない場合は `/isucon-survey` が配布資料、マニュアル URL、スクリーンショットの提示を求める。確認できた形式に合わせて `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE` を設定する。URL を JSON 文字列として埋め込む場合は `{{BENCH_TARGET_URL_JSON}}` のような `_JSON` suffix の placeholder を使う。
-
 ### `/goal` の Phase 指定
 
-`/isucon-survey` 後にまず Phase 1 の検証・補完を行う。次の `/goal` 例は `references/ecs/phase1-survey.md` を読むため、Phase 1 用。
+次の `/goal` 例は Phase 1 用。
 
 ```text
 /goal
@@ -312,38 +272,25 @@ compact や中断から復帰した場合は、作業再開前に `references/ec
 - $TOOL_REPO/references/ecs/phase6-final-prep.md
 ```
 
-Phase 1 を指定した `/goal` では、ユーザーが個別に shell を実行する前提ではなく、Claude が `references/ecs/phase1-survey.md` に従って初動ゲートを確認する。具体的には IAM 到達性、SQS benchmark dry-run、score/pass-fail 返却経路、nginx LTSV、Aurora slow query または Performance Insights、非空 analyze を通してから Phase 2 に進む。SQS message body や score 返却経路のような大会固有情報が未確定なら、推測で埋めず `reports/survey.md` に TODO として残す。
-
 ### 基本ループ
-
-`scripts/ecs/bench-locked.sh` は `BENCH_CMD` を呼ぶだけなので、SQS benchmark でも通常のローカル benchmark コマンドでも基本形は同じ。SQS 環境では Phase 1 で `bench-sqs.sh --dry-run` による message body 確認を済ませたうえで、`BENCH_CMD='bash scripts/ecs/bench-sqs.sh'` にして benchmark request の送信を排他ロック内に入れる。
 
 ```mermaid
 flowchart TD
-  A["/goal Phase 1"] --> B{"Phase 1 gate OK?"}
-  B -- "No" --> C["env / IAM / SQS body / score path / LTSV / PI or slow query を補完"]
-  C --> B
-  B -- "Yes" --> D["Phase 2 baseline"]
-  D --> E["bench-locked.sh --analyze"]
-  E --> F["BENCH_CMD"]
-  F --> G{"SQS benchmark?"}
-  G -- "Yes" --> H["bench-sqs.sh: send-message"]
-  H --> I["BENCH_DURATION_SEC + margin wait"]
-  G -- "No" --> J["local benchmark wrapper"]
-  I --> K["ecs/analyze.sh"]
-  J --> K
-  K --> L{"CloudWatch / PI values stable?"}
-  L -- "No" --> M["数分後に同じ BENCH_START_EPOCH で再 analyze"]
-  M --> K
-  L -- "Yes" --> N["/isucon-analyze で候補化"]
-  N --> O["修正 branch / image build / ECR push"]
-  O --> P["bench-locked.sh --rebuild --analyze"]
-  P --> Q{"公式 score 取得済み?"}
-  Q -- "Yes" --> R["score-log.sh で確定記録"]
-  Q -- "No" --> S["ALB RequestCount / p99 / PI AAS で暫定比較"]
-  R --> T["採用なら merge、却下なら baseline を再 deploy"]
-  S --> T
+  A["/goal phase2"] --> B["baseline benchmark + analyze"]
+  B --> C["/isucon-analyze"]
+  C --> D["候補抽出"]
+  D --> E["候補ごとに修正"]
+  E --> F["deploy + benchmark + analyze"]
+  F --> G{"公式 score 取得済み?"}
+  G -- "Yes" --> H["score-log.sh で確定記録"]
+  G -- "No" --> I["ALB RequestCount / p99 / PI AAS で暫定比較"]
+  H --> J{"採用?"}
+  I --> J
+  J -- "Yes" --> K["merge 後に再 benchmark"]
+  J -- "No" --> L["baseline を再 deploy"]
 ```
+
+### 個別でベンチマークを流す場合
 
 ```bash
 # deploy なし baseline
@@ -351,29 +298,18 @@ bash scripts/ecs/bench-locked.sh --analyze
 
 # app 修正後: build/push/deploy/wait/bench/analyze
 bash scripts/ecs/bench-locked.sh --rebuild --analyze
-```
 
-SQS ベンチは非同期なので `bench-sqs.sh` は送信後 `BENCH_DURATION_SEC`(既定60)+margin だけ待ってから返り、analyze の窓を有効化する。score 取得経路は Phase1 で確定する。SQS では `send-message` が benchmark の完了や score を返すとは限らない。配布資料の手順に従い、benchmark 結果の取得方法、pass/fail message、score 記録方法を `reports/survey.md` に残す。SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command をそのまま設定する。
-
-benchmark 後に分析だけをやり直す場合:
-
-```bash
+# benchmark 後に分析だけをやり直す場合
 BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
 ```
 
-ECS では access log はローカルファイルではなく CloudWatch Logs から取得する。RDS slow query は `mysql.slow_log` または RDS log file から読む。`scripts/ecs/analyze.sh` はベンチ窓の CloudWatch メトリクス（Aurora の CPU/接続数/BufferCacheHitRatio/ACU、ALB の TargetResponseTime/5XX/RequestCount、Fargate の CPU/Memory）も `scripts/ecs/metrics.sh` 経由で取得し、アプリ律速か DB 律速か接続律速かの切り分けに使う。Aurora/RDS では `scripts/ecs/pi.sh` 経由で Performance Insights の SQL 別 DB Load（AAS）と wait event も取得し、ボトルネック SQL を順位付けする。pprof は ECS Exec、task IP、または一時 security group のどれで取るかを Phase 3 で決める。
+SQS ベンチの注意:
 
-CloudWatch メトリクスと Performance Insights には publish 遅延がある。ベンチ直後の `CPUUtilization`、`DatabaseConnections`、PI AAS が過小または `n/a` に見える場合は、ベンチ完了の数分後に同じ `BENCH_START_EPOCH` で `scripts/ecs/analyze.sh` を再実行して比較する。
-
-公式 score の自動取得が未確定な間は、ALB `RequestCount`（window 合計）、`TargetResponseTime` p99、Performance Insights の Total DB Load(AAS) を暫定ランキング指標にする。RequestCount は benchmark が実際に叩く ALB を見る。公式 score が取れたら `scripts/score-log.sh` で確定記録する。
-
-### Fargate/Aurora 固有の攻め筋
-
-レギュレーションで no-spec-change（スペック増強・インフラ構成変更禁止）がある場合、Phase 4 の Aurora parameter 調整で効く余地は小さい。主戦場は Phase 2 のアプリ改修で、N+1 解消、不要クエリ削減、covering index、接続プール設計、既存 Aurora reader endpoint への参照系クエリ振り分けを優先する。
-
-既存 reader endpoint への振り分けはアプリ改修として扱えるが、reader インスタンス追加は構成変更になる。`AuroraReplicaLag` を見て整合性 fail を避ける。Go では `desired count(task数) × SetMaxOpenConns` が Aurora の `max_connections` を超えないようにし、`DatabaseConnections` と ALB `TargetConnectionErrorCount` で確認する。
-
-task CPU/memory 増、Aurora インスタンス級上げ、ACU 上限引き上げ、reader 追加、ElastiCache/Redis/S3 などの新規リソース追加は、許可されている場合だけ Phase 4/5 で単体評価する。Aurora では `innodb_flush_log_at_trx_commit` / `sync_binlog` の緩和は自前 MySQL ほど効かないため、ここに時間を使いすぎない。
+- `bench-sqs.sh` は `send-message` 後、`BENCH_DURATION_SEC`(既定60)+margin だけ待ってから返る。
+- score 取得経路は Phase 1 で確定する。
+- `send-message` は benchmark の完了や score を返すとは限らない。
+- benchmark 結果の取得方法、pass/fail message、score 記録方法は `reports/survey.md` に残す。
+- SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command を設定する。
 
 ---
 

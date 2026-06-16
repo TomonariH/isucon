@@ -39,6 +39,19 @@ install_pt_query_digest() {
   log "pt-query-digest installed"
 }
 
+install_dstat() {
+  if command -v dstat &>/dev/null; then
+    log "dstat already installed"
+    return
+  fi
+  log "Installing dstat..."
+  pkg_install dstat
+  mkdir -p "$STATE_DIR"
+  touch "$STATE_DIR/dstat-installed"
+  log "dstat installed"
+}
+
 install_alp
 install_pt_query_digest
+install_dstat
 log "Tools ready."

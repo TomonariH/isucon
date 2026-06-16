@@ -8,12 +8,15 @@
 **`$ARGUMENTS` が空の場合（通常分析）:**
 0. `scripts/env.sh` を Read して環境情報を把握する（`ISUCON_APP_LANG`・`NGINX_ACCESS_LOG`・`MYSQL_SLOW_LOG`）
 1. `reports/` ディレクトリの最新レポートファイル（日時が最も新しいもの）を読む
-2. alpのアクセスログ集計とpt-query-digestのスロークエリ集計を解析する
+2. alpのアクセスログ集計、pt-query-digestのスロークエリ集計、dstat/docker stats/Go GCトレース（あれば）を解析する
 3. 以下の観点でボトルネックを特定する:
    - sum(合計レスポンスタイム)が大きいエンドポイント
    - count(リクエスト数)が多いエンドポイント
    - 合計実行時間が長いSQLクエリ
    - フルスキャンが疑われるクエリ
+   - **dstat**: CPU使用率(usr+sys)がベンチ中に100%付近で張り付いていないか／メモリ(used)がベンチ終盤に向けて単調増加していないか（OOMの予兆）／diskのread/writeが急増する区間がないか
+   - **docker stats**: 特定コンテナのMEM%がLIMITに近づいていないか（OOM kill直前の兆候）／CPU%が1コア分(100%)で飽和しているコンテナがないか
+   - **Go GCトレース**: `gc N @Ts P%` の P%（GCに使われたCPU時間の割合）が高い場合はGC圧迫＝アロケーション過多／heapサイズ（行末の `->X MB` 相当の値）がベンチ後半まで増え続けている場合はメモリリーク的な蓄積（連続ベンチでのOOMの根本原因になりうる）
 
 **`$ARGUMENTS` にファイルパスが渡された場合（pprof 分析）:**
 0. `scripts/env.sh` を Read して `ISUCON_APP_LANG` を確認する

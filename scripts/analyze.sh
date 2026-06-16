@@ -15,6 +15,12 @@ REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
 MYSQL_SLOW_LOG="${MYSQL_SLOW_LOG:-/var/log/mysql/slow.log}"
 ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"
 
+# bench-locked.sh が書き出す常時メトリクス（dstat / docker stats / Go GC トレース）
+RUNTIME_DIR="${ISUCON_RUNTIME_DIR:-$REPO_DIR/reports/.runtime}"
+DSTAT_LOG="$RUNTIME_DIR/dstat.csv"
+DOCKER_STATS_LOG="$RUNTIME_DIR/docker-stats.log"
+GC_TRACE_LOG="$RUNTIME_DIR/gc-trace.log"
+
 # H2O が存在すればそちらのログを優先、なければ nginx
 _detect_access_log() {
   if [ -n "${NGINX_ACCESS_LOG:-}" ]; then
@@ -88,6 +94,57 @@ run_pt_query_digest() {
   echo ""
 }
 
+# ---- dstat でシステムリソース時系列を解析 ----
+run_dstat() {
+  if [ ! -f "$DSTAT_LOG" ]; then
+    echo "## System Resources (dstat)"
+    echo ""
+    echo "> dstat log not found: $DSTAT_LOG (bench-locked.sh が起動していないか、scripts/setup-tools.sh で dstat 未インストール)"
+    echo ""
+    return
+  fi
+  echo "## System Resources (dstat) — last 40 samples (CPU/mem/disk/net)"
+  echo ""
+  echo '```'
+  tail -n 40 "$DSTAT_LOG" 2>&1 || true
+  echo '```'
+  echo ""
+}
+
+# ---- docker stats でコンテナ別リソースを解析 ----
+run_docker_stats() {
+  if [ ! -f "$DOCKER_STATS_LOG" ]; then
+    echo "## Container Resources (docker stats)"
+    echo ""
+    echo "> docker stats log not found: $DOCKER_STATS_LOG (ISUCON_RUNTIME != docker か bench-locked.sh 未実行)"
+    echo ""
+    return
+  fi
+  echo "## Container Resources (docker stats) — last 5 samples per container"
+  echo ""
+  echo '```'
+  tail -n 60 "$DOCKER_STATS_LOG" 2>&1 || true
+  echo '```'
+  echo ""
+}
+
+# ---- Go GC トレースを解析 ----
+run_gc_trace() {
+  if [ ! -f "$GC_TRACE_LOG" ]; then
+    echo "## Go GC Trace"
+    echo ""
+    echo "> GC trace log not found: $GC_TRACE_LOG (ISUCON_APP_LANG != go か APP_SERVICES 未設定)"
+    echo ""
+    return
+  fi
+  echo "## Go GC Trace — gc lines from benchmark window"
+  echo ""
+  echo '```'
+  grep -E 'gc [0-9]+ @' "$GC_TRACE_LOG" 2>/dev/null | tail -n 60 || echo "(no gc lines found in $GC_TRACE_LOG)"
+  echo '```'
+  echo ""
+}
+
 # ---- ログをローテートしてリセット ----
 rotate_logs() {
   if [ "${ROTATE_LOGS:-1}" = "1" ]; then
@@ -109,6 +166,9 @@ generate_report() {
 
     run_alp
     run_pt_query_digest
+    run_dstat
+    run_docker_stats
+    run_gc_trace
 
     echo "---"
     echo ""

@@ -19,6 +19,7 @@ Environment:
   AWS_REGION      optional AWS region
   ECS_CLUSTER     ECS cluster name
   ECS_SERVICE     ECS service name
+  BENCH_QUEUE_NAME optional benchmark SQS queue name
 EOF
 }
 
@@ -34,6 +35,9 @@ mkdir -p "$(dirname "$REPORT_FILE")"
 
 task_def="$(ecs_service_task_definition)"
 task_arn="$(ecs_latest_task_arn || true)"
+target_group_arns="$(ecs_aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].loadBalancers[].targetGroupArn' --output text 2>/dev/null || true)"
+rds_cluster="${RDS_CLUSTER:-${DB_CLUSTER:-}}"
+rds_instance="${RDS_INSTANCE:-}"
 
 {
   echo "# ECS/RDS Survey"
@@ -66,6 +70,59 @@ task_arn="$(ecs_latest_task_arn || true)"
     echo '```'
     echo ""
   fi
+  if [ -n "${target_group_arns:-}" ] && [ "$target_group_arns" != "None" ]; then
+    echo "## Target Groups / Load Balancers"
+    echo ""
+    echo '```json'
+    ecs_aws elbv2 describe-target-groups --target-group-arns $target_group_arns \
+      --query 'TargetGroups[*].{targetGroupArn:TargetGroupArn,targetGroupName:TargetGroupName,protocol:Protocol,port:Port,targetType:TargetType,loadBalancerArns:LoadBalancerArns,healthCheckPath:HealthCheckPath}' \
+      --output json || true
+    echo '```'
+    lb_arns="$(ecs_aws elbv2 describe-target-groups --target-group-arns $target_group_arns --query 'TargetGroups[].LoadBalancerArns[]' --output text 2>/dev/null || true)"
+    if [ -n "${lb_arns:-}" ] && [ "$lb_arns" != "None" ]; then
+      echo ""
+      echo '```json'
+      ecs_aws elbv2 describe-load-balancers --load-balancer-arns $lb_arns \
+        --query 'LoadBalancers[*].{loadBalancerArn:LoadBalancerArn,loadBalancerName:LoadBalancerName,DNSName:DNSName,Scheme:Scheme,Type:Type,VpcId:VpcId}' \
+        --output json || true
+      echo '```'
+    fi
+    echo ""
+  fi
+  if [ -n "${BENCH_QUEUE_NAME:-}" ]; then
+    echo "## Benchmark Queue"
+    echo ""
+    echo '```json'
+    ecs_aws sqs get-queue-url --queue-name "$BENCH_QUEUE_NAME" --output json || true
+    echo '```'
+    echo ""
+  fi
+  echo "## RDS / Aurora"
+  echo ""
+  echo '```json'
+  if [ -n "$rds_cluster" ]; then
+    ecs_aws rds describe-db-clusters --db-cluster-identifier "$rds_cluster" \
+      --query 'DBClusters[*].{dbClusterIdentifier:DBClusterIdentifier,engine:Engine,endpoint:Endpoint,readerEndpoint:ReaderEndpoint,dbClusterParameterGroup:DBClusterParameterGroup,dbClusterMembers:DBClusterMembers[*].DBInstanceIdentifier}' \
+      --output json || true
+  else
+    ecs_aws rds describe-db-clusters \
+      --query 'DBClusters[*].{dbClusterIdentifier:DBClusterIdentifier,engine:Engine,endpoint:Endpoint,readerEndpoint:ReaderEndpoint,dbClusterParameterGroup:DBClusterParameterGroup,dbClusterMembers:DBClusterMembers[*].DBInstanceIdentifier}' \
+      --output json || true
+  fi
+  echo '```'
+  echo ""
+  echo '```json'
+  if [ -n "$rds_instance" ]; then
+    ecs_aws rds describe-db-instances --db-instance-identifier "$rds_instance" \
+      --query 'DBInstances[*].{dbInstanceIdentifier:DBInstanceIdentifier,dbClusterIdentifier:DBClusterIdentifier,engine:Engine,endpoint:Endpoint.Address,dbParameterGroup:DBParameterGroups[0].DBParameterGroupName}' \
+      --output json || true
+  else
+    ecs_aws rds describe-db-instances \
+      --query 'DBInstances[*].{dbInstanceIdentifier:DBInstanceIdentifier,dbClusterIdentifier:DBClusterIdentifier,engine:Engine,endpoint:Endpoint.Address,dbParameterGroup:DBParameterGroups[0].DBParameterGroupName}' \
+      --output json || true
+  fi
+  echo '```'
+  echo ""
   echo "## env.sh candidate"
   echo ""
   echo '```bash'
@@ -74,10 +131,19 @@ task_arn="$(ecs_latest_task_arn || true)"
   echo "export ECS_CLUSTER='$ECS_CLUSTER'"
   echo "export ECS_SERVICE='$ECS_SERVICE'"
   echo "export ECS_TASK_DEFINITION='$task_def'"
-  echo "export DB_TYPE='rds'"
+  echo "export DB_TYPE='aurora'"
+  echo "export RDS_CLUSTER='<aurora-cluster-id>'"
+  echo "export RDS_CLUSTER_PARAM_GROUP='<aurora-cluster-parameter-group>'"
+  echo "export RDS_INSTANCE='<db-instance-id>'"
+  echo "export RDS_PARAM_GROUP='<db-instance-parameter-group>'"
   echo "export REBUILD_CMD='bash scripts/ecs/deploy.sh'"
-  echo "export BENCH_TARGET_URL='<task-ip-or-host-url>'"
-  echo "export BENCH_CMD='<benchmark command>'"
+  echo "export ECR_REPOSITORY='<repository-name>'"
+  echo "export BACKEND_ALB_NAME='<backend-alb-name>'"
+  echo "export BACKEND_ALB_PROTOCOL='http'"
+  echo "export BACKEND_ALB_PATH='/'"
+  echo "export BENCH_QUEUE_NAME='${BENCH_QUEUE_NAME:-<benchmark-queue-name>}'"
+  echo "export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'"
+  echo "export BENCH_MESSAGE_BODY='{\"target_url\":\"{{BENCH_TARGET_URL}}\"}'"
   echo '```'
 } > "$REPORT_FILE"
 

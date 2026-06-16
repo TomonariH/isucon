@@ -50,6 +50,82 @@ ecs_aws() {
   fi
 }
 
+ecs_upper() {
+  printf '%s' "$1" | tr '[:lower:]' '[:upper:]'
+}
+
+ecs_indirect() {
+  local name="$1"
+  printf '%s' "${!name:-}"
+}
+
+ecs_sqs_queue_url() {
+  local queue_url="${BENCH_QUEUE_URL:-${SQS_QUEUE_URL:-}}"
+  local queue_name="${BENCH_QUEUE_NAME:-${SQS_QUEUE_NAME:-}}"
+  if [ -n "$queue_url" ]; then
+    echo "$queue_url"
+    return
+  fi
+  [ -n "$queue_name" ] || {
+    echo "[ecs] ERROR: BENCH_QUEUE_URL or BENCH_QUEUE_NAME is required" >&2
+    return 1
+  }
+  ecs_require_cmd aws || return 1
+  ecs_aws sqs get-queue-url --queue-name "$queue_name" --query 'QueueUrl' --output text
+}
+
+ecs_json_escape() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+  else
+    sed 's/\\/\\\\/g; s/"/\\"/g' | awk 'BEGIN{printf "\""} {printf "%s%s", sep, $0; sep="\\n"} END{printf "\""}'
+  fi
+}
+
+ecs_alb_url_for() {
+  local kind="$1"
+  local upper url dns arn name protocol port path lb_info port_part
+  upper="$(ecs_upper "$kind")"
+
+  url="$(ecs_indirect "${upper}_ALB_URL")"
+  if [ -n "$url" ]; then
+    echo "$url"
+    return
+  fi
+
+  dns="$(ecs_indirect "${upper}_ALB_DNS_NAME")"
+  arn="$(ecs_indirect "${upper}_ALB_ARN")"
+  name="$(ecs_indirect "${upper}_ALB_NAME")"
+  if [ -z "$dns" ] && [ -n "$arn" ]; then
+    ecs_require_cmd aws || return 1
+    dns="$(ecs_aws elbv2 describe-load-balancers --load-balancer-arns "$arn" --query 'LoadBalancers[0].DNSName' --output text)"
+  elif [ -z "$dns" ] && [ -n "$name" ]; then
+    ecs_require_cmd aws || return 1
+    dns="$(ecs_aws elbv2 describe-load-balancers --names "$name" --query 'LoadBalancers[0].DNSName' --output text)"
+  fi
+  [ -n "$dns" ] && [ "$dns" != "None" ] || {
+    echo "[ecs] ERROR: ${upper}_ALB_URL, ${upper}_ALB_DNS_NAME, ${upper}_ALB_ARN, or ${upper}_ALB_NAME is required" >&2
+    return 1
+  }
+
+  protocol="$(ecs_indirect "${upper}_ALB_PROTOCOL")"
+  protocol="${protocol:-http}"
+  port="$(ecs_indirect "${upper}_ALB_PORT")"
+  path="$(ecs_indirect "${upper}_ALB_PATH")"
+  path="${path:-/}"
+  case "$path" in
+    /*) ;;
+    *) path="/$path" ;;
+  esac
+
+  port_part=""
+  if [ -n "$port" ]; then
+    port_part=":$port"
+  fi
+  lb_info="${protocol}://${dns}${port_part}${path}"
+  echo "$lb_info"
+}
+
 ecs_latest_task_arn() {
   ecs_require_env ECS_CLUSTER ECS_SERVICE || return 1
   ecs_aws ecs list-tasks \

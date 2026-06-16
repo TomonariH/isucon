@@ -22,7 +22,7 @@
 3. `$TOOL_REPO/scripts/ecs/analyze.sh` の report を `/isucon-analyze` で読む。
 4. 高・中インパクトの候補だけを抽出し、`improvement-log.sh candidate` で記録する。
 5. 候補ごとに独立 branch / worktree を作る。
-6. 修正ごとに image build / ECR push / ECS deploy / benchmark を実行する。
+6. 修正ごとに image build / ECR push / ECS deploy / benchmark を実行する。SQS benchmark 環境では `BENCH_CMD='bash $TOOL_REPO/scripts/ecs/bench-sqs.sh'` にしておく。
 
    ```bash
    bash $TOOL_REPO/scripts/ecs/bench-locked.sh --rebuild --analyze
@@ -35,9 +35,11 @@
 ## ECS-Specific Checks
 
 - deploy 後に task definition revision / image tag が想定通りか確認する。
+- `aws sts get-caller-identity` の account ID と ECR repository が想定通りか確認する。
 - CloudWatch Logs が新 task の stream から取得できているか確認する。
 - RDS connection 数が増えすぎていないか確認する。
-- task direct URL が古い task IP を指していないか確認する。
+- benchmark target が backend ALB URL になっているか確認する。
+- SQS send-message の response と benchmark 側の messages を確認する。
 
 ## Forbidden
 

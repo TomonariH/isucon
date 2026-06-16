@@ -12,6 +12,7 @@ APP_BUILD_DIR="${APP_BUILD_DIR:-${ISUCON_WEBAPP_DIR:-}}"
 IMAGE_TAG="${IMAGE_TAG:-isucon-latest}"
 DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 PLATFORM_ARG="${DOCKER_PLATFORM:+--platform $DOCKER_PLATFORM}"
+ECR_REPOSITORY="${ECR_REPOSITORY:-}"
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,7 @@ Environment:
   APP_BUILD_DIR        Docker build context, defaults to ISUCON_WEBAPP_DIR
   DOCKERFILE          Dockerfile path relative to APP_BUILD_DIR, default: Dockerfile
   ECR_IMAGE           ECR image URI without tag
+  ECR_REPOSITORY      repository name used with aws sts account ID when ECR_IMAGE is empty
   IMAGE_TAG           image tag, default: isucon-latest
   AWS_REGION          AWS region
   ECS_CLUSTER         ECS cluster name
@@ -37,9 +39,24 @@ case "${1:-}" in
     ;;
 esac
 
-ecs_require_cmd aws docker
-ecs_require_env ECR_IMAGE ECS_CLUSTER ECS_SERVICE
+ecs_require_cmd aws
+ecs_require_env ECS_CLUSTER ECS_SERVICE
+
 if [ "${SKIP_DOCKER_BUILD:-0}" != "1" ]; then
+  ecs_require_cmd docker
+  if [ -z "${ECR_IMAGE:-}" ]; then
+    [ -n "$ECR_REPOSITORY" ] || {
+      echo "[ecs] ERROR: ECR_IMAGE or ECR_REPOSITORY is required" >&2
+      exit 1
+    }
+    [ -n "${AWS_REGION:-}" ] || {
+      echo "[ecs] ERROR: AWS_REGION is required when ECR_IMAGE is empty" >&2
+      exit 1
+    }
+    AWS_ACCOUNT_ID="$(ecs_aws sts get-caller-identity --query Account --output text)"
+    ECR_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+  fi
+
   [ -n "$APP_BUILD_DIR" ] || {
     echo "[ecs] ERROR: APP_BUILD_DIR or ISUCON_WEBAPP_DIR is required" >&2
     exit 1

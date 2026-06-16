@@ -71,28 +71,55 @@ setup_rds_slowlog() {
 # ---- AWS CLI でパラメータグループを設定する（--aws-cli オプション時） ----
 setup_rds_via_aws_cli() {
   command -v aws &>/dev/null || { log "ERROR: aws CLI not found. Install with: pip install awscli"; exit 1; }
+  local updated=0
 
-  if [ -z "${RDS_INSTANCE:-}" ]; then
-    log "ERROR: RDS_INSTANCE env var required"
+  if [ -z "${RDS_PARAM_GROUP:-}" ] && [ -z "${RDS_CLUSTER_PARAM_GROUP:-}" ]; then
+    log "ERROR: RDS_PARAM_GROUP or RDS_CLUSTER_PARAM_GROUP env var required"
     exit 1
   fi
-  if [ -z "${RDS_PARAM_GROUP:-}" ]; then
-    log "ERROR: RDS_PARAM_GROUP env var required"
+
+  if [ -n "${RDS_PARAM_GROUP:-}" ]; then
+    log "RDS_PARAM_GROUP=$RDS_PARAM_GROUP"
+    log "Modifying DB parameter group: $RDS_PARAM_GROUP"
+    if aws rds modify-db-parameter-group \
+      --db-parameter-group-name "$RDS_PARAM_GROUP" \
+      --parameters \
+        "ParameterName=slow_query_log,ParameterValue=1,ApplyMethod=immediate" \
+        "ParameterName=long_query_time,ParameterValue=0,ApplyMethod=immediate" \
+        "ParameterName=log_output,ParameterValue=TABLE,ApplyMethod=immediate"; then
+      updated=1
+    else
+      log "WARNING: Could not modify DB parameter group. For Aurora, these parameters may belong to the cluster parameter group."
+    fi
+  fi
+
+  if [ -n "${RDS_CLUSTER_PARAM_GROUP:-}" ]; then
+    log "RDS_CLUSTER_PARAM_GROUP=$RDS_CLUSTER_PARAM_GROUP"
+    log "Modifying DB cluster parameter group: $RDS_CLUSTER_PARAM_GROUP"
+    if aws rds modify-db-cluster-parameter-group \
+      --db-cluster-parameter-group-name "$RDS_CLUSTER_PARAM_GROUP" \
+      --parameters \
+        "ParameterName=slow_query_log,ParameterValue=1,ApplyMethod=immediate" \
+        "ParameterName=long_query_time,ParameterValue=0,ApplyMethod=immediate" \
+        "ParameterName=log_output,ParameterValue=TABLE,ApplyMethod=immediate"; then
+      updated=1
+    else
+      log "WARNING: Could not modify DB cluster parameter group. Check engine family and parameter support."
+    fi
+  fi
+
+  if [ "$updated" = "0" ]; then
+    log "ERROR: No parameter group was updated"
     exit 1
   fi
-  log "RDS_INSTANCE=$RDS_INSTANCE"
-  log "RDS_PARAM_GROUP=$RDS_PARAM_GROUP"
-
-  log "Modifying RDS parameter group: $RDS_PARAM_GROUP"
-  aws rds modify-db-parameter-group \
-    --db-parameter-group-name "$RDS_PARAM_GROUP" \
-    --parameters \
-      "ParameterName=slow_query_log,ParameterValue=1,ApplyMethod=immediate" \
-      "ParameterName=long_query_time,ParameterValue=0,ApplyMethod=immediate" \
-      "ParameterName=log_output,ParameterValue=TABLE,ApplyMethod=immediate"
 
   log "Parameter group updated. Changes may take a few minutes to apply."
-  log "If not applied yet, reboot: aws rds reboot-db-instance --db-instance-identifier $RDS_INSTANCE"
+  if [ -n "${RDS_INSTANCE:-}" ]; then
+    log "If not applied yet, reboot: aws rds reboot-db-instance --db-instance-identifier $RDS_INSTANCE"
+  fi
+  if [ -n "${RDS_CLUSTER:-}" ]; then
+    log "Aurora cluster: $RDS_CLUSTER. Reboot individual DB instances if pending-reboot remains."
+  fi
 }
 
 main() {

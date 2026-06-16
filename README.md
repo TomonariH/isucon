@@ -30,6 +30,8 @@ scripts/
     deploy.sh       # Docker build -> ECR push -> ECS force deployment
     wait-stable.sh  # ECS service stable と healthcheck を待つ
     bench-locked.sh # ECS deploy / benchmark の排他実行
+    bench-sqs.sh    # SQS queue に benchmark request を送信
+    resolve-alb-url.sh # ALB name/ARN/DNS から target URL を解決
     logs.sh         # CloudWatch Logs から nginx/app stdout を取得
     analyze.sh      # ECS nginx stdout + RDS slow log の分析 report を生成
     pprof.sh        # ECS pprof 取得補助
@@ -203,13 +205,28 @@ bash scripts/setup-app.sh
 
 ---
 
-## ECS/RDS 環境の戦い方
+## Fargate/ALB/Aurora 環境の戦い方
 
-ECS + RDS 環境では、既存の `systemd` / Docker Compose 向け Phase 手順に条件分岐を足さず、`references/ecs/` を正本にする。作業場所は ECS task 内ではなく、AWS CLI と Docker が使えるローカル端末または作業用 EC2 を基本にする。
+Fargate + ALB + Aurora MySQL 環境では、既存の `systemd` / Docker Compose 向け Phase 手順に条件分岐を足さず、`references/ecs/` を正本にする。作業場所は ECS task 内ではなく、AWS CLI と Docker が使えるローカル端末または作業用 EC2 を基本にする。
 
 ECS task は入れ替わる前提なので、running container 内で直接設定を書き換えない。変更は app repo、Docker image、ECR tag、ECS service/task definition、RDS parameter group に反映する。
 
+frontend ALB と backend ALB は分けて扱う。frontend task から backend ALB へアクセスし、benchmark は NAT Gateway 経由で backend ALB を叩く想定なら、`BENCH_CMD='bash scripts/ecs/bench-sqs.sh'` とし、SQS queue に backend ALB URL を送る。
+
 作業端末には AWS CLI、Docker、python3、alp、RDS 解析に必要な mysql client / pt-query-digest を用意する。alp や pt-query-digest は通常 `scripts/setup-tools.sh` で入れる。
+
+### 対応モデル
+
+| 構成 | 方針 | 主な script |
+|---|---|---|
+| ECS Fargate / ECS on EC2 | task 内を直接変更せず、image build / ECR push / ECS service update で反映する | `scripts/ecs/deploy.sh`, `scripts/ecs/bench-locked.sh` |
+| ECS + backend ALB + SQS benchmark | backend ALB URL を解決し、SQS に benchmark request を送る | `scripts/ecs/resolve-alb-url.sh`, `scripts/ecs/bench-sqs.sh` |
+| ECS nginx container | CloudWatch Logs の stdout を alp 入力にする。LTSV でなければ image 側 nginx config を直す | `scripts/ecs/logs.sh`, `scripts/ecs/analyze.sh` |
+| EC2 + nginx process | ローカル access log を読む従来手順を使う | `scripts/setup-nginx.sh`, `scripts/analyze.sh` |
+| Docker Compose nginx container | host に expose した access log を読む従来手順を使う | `scripts/setup-docker.sh`, `scripts/analyze.sh` |
+| Aurora MySQL | cluster parameter group と instance parameter group を両方確認し、`mysql.slow_log` を読む | `scripts/analyze-rds.sh`, `templates/rds-parameter-group.md` |
+| RDS MySQL | DB parameter group を確認し、`mysql.slow_log` を読む | `scripts/setup-rds.sh`, `scripts/analyze-rds.sh` |
+| self-managed MySQL on EC2 | MySQL conf を直接変更し、slow log file を読む | `scripts/setup-mysql.sh`, `scripts/analyze.sh` |
 
 ### 初動
 
@@ -220,13 +237,31 @@ ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
 
 `reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
 
+SQS 経由で benchmark を起動する環境では、最低限次を埋める。
+
+```bash
+export DB_TYPE='aurora'
+export ECR_REPOSITORY='<repository-name>'
+export RDS_CLUSTER='<aurora-cluster-id>'
+export RDS_CLUSTER_PARAM_GROUP='<aurora-cluster-parameter-group>'
+export RDS_INSTANCE='<db-instance-id>'
+export RDS_PARAM_GROUP='<db-instance-parameter-group>'
+export BACKEND_ALB_NAME='<backend-alb-name>'
+export BACKEND_ALB_PROTOCOL='http'
+export BENCH_QUEUE_NAME='<benchmark-queue-name>'
+export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'
+export BENCH_MESSAGE_BODY='{"target_url":"{{BENCH_TARGET_URL}}"}'
+```
+
+SQS message body は大会ごとに違うため、配布資料に合わせて `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE` を差し替える。URL を JSON 文字列として埋め込む場合は `{{BENCH_TARGET_URL_JSON}}` のような `_JSON` suffix の placeholder を使う。
+
 ### `/goal` の Phase 指定
 
 初動後に改善ループへ入る場合は Phase 2 を指定する。次の `/goal` 例は `references/ecs/phase2-improvement-loop.md` を読むため、Phase 2 用。
 
 ```text
 /goal
-まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、ECS/RDS 向け Phase を実行してください。
+まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Fargate/ALB/Aurora 向け Phase を実行してください。
 
 - $TOOL_REPO/references/ecs/goal-common.md
 - $TOOL_REPO/references/agent-rules.md
@@ -271,6 +306,9 @@ bash scripts/ecs/bench-locked.sh --analyze
 
 # app 修正後: build/push/deploy/wait/bench/analyze
 bash scripts/ecs/bench-locked.sh --rebuild --analyze
+
+# SQS benchmark request だけ送る
+bash scripts/ecs/bench-sqs.sh
 
 # benchmark 後に手動分析だけ行う
 BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
@@ -428,7 +466,7 @@ ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
 
 ### `scripts/ecs/deploy.sh`
 
-Docker image を build して ECR に push し、ECS service を `--force-new-deployment` で更新して stable まで待つ。`REBUILD_CMD='bash scripts/ecs/deploy.sh'` として使う。
+Docker image を build して ECR に push し、ECS service を `--force-new-deployment` で更新して stable まで待つ。既存 task definition が同じ image tag を参照している前提で、task definition revision は新規作成しない。`ECR_IMAGE` が空なら `aws sts get-caller-identity` と `ECR_REPOSITORY` から image URI を組み立てる。`REBUILD_CMD='bash scripts/ecs/deploy.sh'` として使う。
 
 ```bash
 bash scripts/ecs/deploy.sh
@@ -450,6 +488,28 @@ ECS deploy / benchmark を排他実行する。`--rebuild` で `REBUILD_CMD` を
 ```bash
 bash scripts/ecs/bench-locked.sh --analyze
 bash scripts/ecs/bench-locked.sh --rebuild --analyze
+```
+
+### `scripts/ecs/bench-sqs.sh`
+
+SQS queue に benchmark request を送る。`BENCH_QUEUE_URL` がなければ `BENCH_QUEUE_NAME` から queue URL を取得し、`BENCH_TARGET_URL` がなければ backend ALB 設定から URL を解決する。message body は `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE` で大会形式に合わせる。
+
+```bash
+BENCH_QUEUE_NAME=<queue> BACKEND_ALB_NAME=<backend-alb> bash scripts/ecs/bench-sqs.sh
+BENCH_QUEUE_NAME=<queue> BACKEND_ALB_NAME=<backend-alb> bash scripts/ecs/bench-sqs.sh --dry-run
+BENCH_MESSAGE_BODY='{"target_url":"{{BENCH_TARGET_URL}}"}' bash scripts/ecs/bench-sqs.sh
+BENCH_MESSAGE_BODY='{"backend":{{BACKEND_ALB_URL_JSON}},"frontend":{{FRONTEND_ALB_URL_JSON}}}' bash scripts/ecs/bench-sqs.sh --dry-run
+```
+
+置換できる placeholder は `{{BENCH_TARGET_URL}}`、`{{BACKEND_ALB_URL}}`、`{{FRONTEND_ALB_URL}}`、`{{BENCH_QUEUE_URL}}`。JSON 文字列として埋める場合は `{{BENCH_TARGET_URL_JSON}}`、`{{BACKEND_ALB_URL_JSON}}`、`{{FRONTEND_ALB_URL_JSON}}`、`{{BENCH_QUEUE_URL_JSON}}` を使う。
+
+### `scripts/ecs/resolve-alb-url.sh`
+
+backend / frontend ALB の name、ARN、DNS name から target URL を出力する。SQS benchmark の送信前確認や `BENCH_TARGET_URL` の手動設定に使う。
+
+```bash
+BACKEND_ALB_NAME=<backend-alb> bash scripts/ecs/resolve-alb-url.sh --kind backend
+FRONTEND_ALB_NAME=<frontend-alb> bash scripts/ecs/resolve-alb-url.sh --kind frontend
 ```
 
 ### `scripts/ecs/logs.sh`
@@ -584,7 +644,7 @@ DB サーバーを app サーバーから接続できるように `bind-address=
 
 ### `templates/rds-parameter-group.md`
 
-RDS / Aurora で slow query log を取るためのパラメータグループ手順。`slow_query_log=1`、`long_query_time=0`、`log_output=TABLE` を設定し、`analyze-rds.sh` で読む。
+RDS / Aurora で slow query log を取るためのパラメータグループ手順。`slow_query_log=1`、`long_query_time=0`、`log_output=TABLE` を設定し、`analyze-rds.sh` で読む。Aurora は DB cluster parameter group と DB instance parameter group の両方を確認する。
 
 ### `templates/go-pprof.snippet`
 

@@ -19,12 +19,18 @@ ECS + RDS 環境では、既存の `references/goals/` ではなくこの `refer
 - `ECS_LOG_GROUP` / `ECS_NGINX_LOG_GROUP` / `ECS_APP_LOG_GROUP`
 - `ECS_LOG_STREAM_PREFIX` / `ECS_NGINX_LOG_STREAM_PREFIX` / `ECS_APP_LOG_STREAM_PREFIX`
 - `ECR_IMAGE`
+- `ECR_REPOSITORY`（`ECR_IMAGE` を自動生成する場合）
 - `IMAGE_TAG`
-- `BENCH_TARGET_URL`
+- `FRONTEND_ALB_NAME` / `FRONTEND_ALB_ARN` / `FRONTEND_ALB_DNS_NAME`
+- `BACKEND_ALB_NAME` / `BACKEND_ALB_ARN` / `BACKEND_ALB_DNS_NAME`
+- `BENCH_TARGET_URL`（空なら backend ALB から解決）
+- `BENCH_QUEUE_URL` または `BENCH_QUEUE_NAME`
+- `BENCH_MESSAGE_BODY` または `BENCH_MESSAGE_FILE`
 - `BENCH_CMD`
 - `REBUILD_CMD`
 - `DB_TYPE=rds|aurora`
 - `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASS` / `DB_NAME`
+- `RDS_CLUSTER` / `RDS_CLUSTER_PARAM_GROUP`（Aurora の場合）
 - `RDS_INSTANCE`
 - `RDS_PARAM_GROUP`
 
@@ -33,10 +39,13 @@ ECS + RDS 環境では、既存の `references/goals/` ではなくこの `refer
 ## Execution Model
 
 - rebuild / deploy / benchmark は必ず `$TOOL_REPO/scripts/ecs/bench-locked.sh` で直列化する。
-- ECS deploy は ECR push + `aws ecs update-service --force-new-deployment` + `aws ecs wait services-stable` を基本にする。
+- ECS deploy は ECR push + `aws ecs update-service --force-new-deployment` + `aws ecs wait services-stable` を基本にする。既存 task definition が同じ image tag を参照している前提で、task definition revision は自動作成しない。
+- `ECR_IMAGE` が未確定なら、`ECR_REPOSITORY` と `aws sts get-caller-identity` の account ID から deploy script が組み立てる。
+- SQS queue で benchmark を起動する場合は `BENCH_CMD='bash $TOOL_REPO/scripts/ecs/bench-sqs.sh'` を使う。
 - task 内で設定ファイルを直接編集しない。変更は app repo、Docker image、task definition、ECS service、RDS parameter group に反映する。
 - nginx/app logs は CloudWatch Logs から取得する。ローカル file path 前提の `NGINX_ACCESS_LOG` に依存しない。
 - RDS slow query は `mysql.slow_log` table または AWS CLI の RDS log download から取得する。
+- frontend ALB と backend ALB が分かれる場合、benchmark target は backend ALB として扱う。frontend task から backend ALB へアクセスする構成では、両方の ALB 名/ARN/DNS を report に残す。
 
 ## Benchmark Exclusivity
 

@@ -1,6 +1,6 @@
 # ECS/RDS Phase 4 Infra Tuning
 
-ECS task definition / container image / RDS parameter group を単体差分で評価する。
+ECS task definition / container image / RDS/Aurora parameter group を単体差分で評価する。
 
 ## Read First
 
@@ -16,11 +16,12 @@ bash $TOOL_REPO/scripts/score-log.sh <score> "ecs infra baseline"
 
 ## Candidates
 
-1. RDS parameter group を単体評価する。
+1. RDS / Aurora parameter group を単体評価する。
    - `long_query_time=0` は分析用。最終構成には原則残さない。
    - `innodb_flush_log_at_trx_commit` / `sync_binlog` / connection cache 系は parameter group で変更する。
-   - `ApplyMethod=pending-reboot` の値は RDS reboot が必要。再起動可否を確認する。
-   - 変更前後の parameter group 値を `reports/ecs-infra-tuning.md` に記録する。
+   - Aurora は DB cluster parameter group と DB instance parameter group の両方を確認する。
+   - `ApplyMethod=pending-reboot` の値は DB instance reboot が必要。Aurora cluster の場合も対象 instance ごとの再起動可否を確認する。
+   - 変更前後の cluster parameter group / instance parameter group 値を `reports/ecs-infra-tuning.md` に記録する。
 
 2. nginx config を image 差分として評価する。
    - nginx container stdout が LTSV でないなら LTSV 化を最優先する。
@@ -45,5 +46,5 @@ bash $TOOL_REPO/scripts/score-log.sh <score> "ecs infra baseline"
 
 ## Forbidden
 
-- RDS parameter、nginx config、task sizing をまとめて変えること。
+- RDS/Aurora parameter、nginx config、task sizing をまとめて変えること。
 - Phase 6 のログ停止や pprof 削除をここで行うこと。

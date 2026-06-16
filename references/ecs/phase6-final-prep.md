@@ -15,14 +15,14 @@ ECS/RDS の最終提出用構成を固定し、不要な分析設定を外す。
    - ECS task definition revision
    - ECS service desired count
    - task CPU / memory
-   - RDS parameter group
+   - RDS/Aurora cluster parameter group / instance parameter group
    - security group
    - CloudWatch log group
 
 2. 分析用設定を外す。
    - pprof import / goroutine / port
    - temporary security group / route
-   - RDS `long_query_time=0` や `slow_query_log=1` が最終スコアに不要なら戻す
+   - RDS/Aurora `long_query_time=0` や `slow_query_log=1` が最終スコアに不要なら parameter group で戻す
    - nginx access log を止める場合は、分析が終わってから image/config に反映する
 
 3. 最終 image を build/push/deploy する。
@@ -44,6 +44,6 @@ ECS/RDS の最終提出用構成を固定し、不要な分析設定を外す。
 
 ## Forbidden
 
-- 未評価の image / task definition / RDS parameter を最終構成にすること。
+- 未評価の image / task definition / RDS/Aurora parameter を最終構成にすること。
 - pprof や unrestricted debug port を残すこと。
 - task 内手作業だけで成立する設定を最終構成にすること。

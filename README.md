@@ -26,6 +26,7 @@ scripts/
   improvement-log.sh # 改善候補・評価・cleanup 判断を reports に記録
   score-log.sh      # スコアを reports/scores.md に記録
   ecs/
+    discover.sh     # AWS account 内の ECS/ALB/RDS/SQS/ECR/Logs 構造を概観
     survey.sh       # ECS service/task definition/log 調査 report を生成
     deploy.sh       # Docker build -> ECR push -> ECS force deployment
     wait-stable.sh  # ECS service stable と healthcheck を待つ
@@ -232,10 +233,11 @@ frontend ALB と backend ALB は分けて扱う。frontend task から backend A
 
 ```bash
 source scripts/env.sh 2>/dev/null || true
+AWS_REGION=<region> bash scripts/ecs/discover.sh
 ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
 ```
 
-`reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
+`reports/aws-survey.md` で AWS 全体の構造を見て、backend service、backend ALB、Aurora cluster、benchmark SQS queue を特定する。その後 `reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
 
 SQS 経由で benchmark を起動する環境では、最低限次を埋める。
 
@@ -454,6 +456,15 @@ bash scripts/score-log.sh 5800 "画像をファイルシステムに移動"
 bash scripts/improvement-log.sh candidate C1 high low feature/cache-user "cache user lookup"
 bash scripts/improvement-log.sh eval C1 feature/cache-user 12345 true merged "improved baseline"
 bash scripts/improvement-log.sh cleanup feature/cache-user /tmp/wt kept "left for audit"
+```
+
+### `scripts/ecs/discover.sh`
+
+AWS account 内の ECS cluster/service、ALB、target group、RDS/Aurora、SQS、ECR、CloudWatch Logs を広く調査し、`reports/aws-survey.md` を生成する。Fargate/ALB/Aurora 環境では `/isucon-survey` の初動でこれを実行し、backend service と benchmark queue を特定してから `scripts/ecs/survey.sh` に進む。
+
+```bash
+AWS_REGION=<region> bash scripts/ecs/discover.sh
+REPORT_FILE=reports/aws-survey-prod.md bash scripts/ecs/discover.sh
 ```
 
 ### `scripts/ecs/survey.sh`

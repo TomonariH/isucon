@@ -45,10 +45,18 @@ install_dstat() {
     return
   fi
   log "Installing dstat..."
-  pkg_install dstat
-  mkdir -p "$STATE_DIR"
-  touch "$STATE_DIR/dstat-installed"
-  log "dstat installed"
+  # Amazon Linux 2023 などでは dstat パッケージが pcp-dstat に統合されており、
+  # dstat という名前のパッケージが無い。dstat → pcp-dstat の順で試す。
+  # dstat は bench-locked.sh では任意（未導入ならスキップ）なので、
+  # ここで失敗しても setup 全体を止めない。
+  if pkg_install dstat 2>/dev/null || pkg_install pcp-dstat 2>/dev/null; then
+    mkdir -p "$STATE_DIR"
+    touch "$STATE_DIR/dstat-installed"
+    log "dstat installed"
+  else
+    log "WARNING: could not install dstat (tried dstat, pcp-dstat)."
+    log "  bench-locked.sh は dstat 未導入ならリソース計測をスキップして継続します。"
+  fi
 }
 
 install_alp

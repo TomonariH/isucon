@@ -11,6 +11,14 @@ REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
 # /isucon-survey が生成した env.sh を読む（Docker・RDS 等のログパス・接続情報を含む）
 [ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
 
+# RDS / Aurora ではスロークエリがファイルではなく mysql.slow_log テーブルにあるため、
+# 専用の analyze-rds.sh に委譲する。exec で置き換えるので二重レポートは発生しない。
+case "${DB_TYPE:-}" in
+  rds|aurora)
+    exec bash "$SCRIPT_DIR/analyze-rds.sh" "$@"
+    ;;
+esac
+
 # デフォルトパス（ISUCON環境に合わせて上書き可能）
 MYSQL_SLOW_LOG="${MYSQL_SLOW_LOG:-/var/log/mysql/slow.log}"
 ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"

@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
 
 # /isucon-survey が生成した env.sh を読む（存在すれば）
 [ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
@@ -97,6 +98,13 @@ setup_rds_via_aws_cli() {
 main() {
   log "=== ISUCON RDS setup start ==="
   log "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+
+  # mysql クライアントが無いと check_rds / slow log 設定 / analyze-rds.sh が動かない。
+  if ! ensure_mysql_client; then
+    log "WARNING: mysql client not found and could not be installed automatically."
+    log "  RDS への接続確認・slow log 設定・analyze-rds.sh が動きません。"
+    log "  手動で導入してください（Amazon Linux 2023: sudo dnf install mariadb105 / Ubuntu: sudo apt-get install default-mysql-client）。"
+  fi
 
   if check_rds; then
     log "Detected: AWS RDS / Aurora"

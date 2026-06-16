@@ -7,6 +7,8 @@ ISUCON 競技向けスクリプト・スキル集。
 
 ```
 scripts/
+  alp.yml           # alp URI 正規化設定（/isucon-survey または手動で更新）
+  env.sh            # /isucon-survey が生成する環境変数（git 管理外）
   install-claude.sh # Claude Code CLI をインストールする
   setup-tools.sh    # alp / pt-query-digest インストール（分析実行サーバー）
   setup-nginx.sh    # nginx LTSV アクセスログ設定（nginx サーバー）
@@ -14,10 +16,14 @@ scripts/
   setup-app.sh      # git init / reports ディレクトリ作成（アプリサーバー）
   setup-docker.sh   # Docker Compose 環境向けセットアップ（ログ expose・nginx LTSV・MySQL slow log）
   setup-rds.sh      # RDS 環境向けセットアップ（MySQL が AWS RDS / Aurora の場合）
+  setup.sh          # 1台構成向け初動セットアップ wrapper
+  unsetup.sh        # setup.sh / setup-* の一部変更を元に戻す補助
   lib.sh            # 共通環境検出ライブラリ（OS / arch / MySQL サービス名など）
   lib-docker.sh     # Docker Compose 環境向け helper（compose file / service 検出）
   analyze.sh        # ベンチ後に毎回実行する計測・レポート生成（H2O 自動検出）
   analyze-rds.sh    # RDS 環境向け分析（mysql.slow_log テーブル対応）
+  bench-locked.sh   # rebuild / benchmark の排他実行とログ window 管理
+  improvement-log.sh # 改善候補・評価・cleanup 判断を reports に記録
   score-log.sh      # スコアを reports/scores.md に記録
 templates/
   nginx-00-ltsv.conf        # nginx LTSV アクセスログ設定
@@ -41,11 +47,15 @@ references/
   orchestration-rules.md    # 複数エージェント・worktree・merge採否ルール
   phase-boundaries.md       # Phase の責務境界
   goals/                    # Phase 別 /goal 手順
+.codex/skills/
+  isucon-*                  # Codex 用 skill wrapper（.claude/commands を正本として参照）
 .claude/commands/
   isucon-survey.md          # /isucon-survey スキル（競技開幕の環境調査）
   isucon-analyze.md         # /isucon-analyze スキル
+  isucon-fix.md             # /isucon-fix スキル（具体的な改善候補の実装）
   isucon-multiserver.md     # /isucon-multiserver スキル（複数台構成）
   isucon-pprof.md           # /isucon-pprof スキル（Go pprof）
+  isucon-review-app.md      # /isucon-review-app スキル（アプリ性能レビュー）
 reports/                    # analyze.sh が生成するレポートの出力先
 ```
 
@@ -186,27 +196,118 @@ bash scripts/setup-app.sh
 
 ## スクリプトリファレンス
 
+### 使い方の前提
+
+多くの script は `/isucon-survey` が生成する `scripts/env.sh` を読む。競技環境ではまず次を実行してから使う。
+
+```bash
+source scripts/env.sh
+```
+
+`scripts/lib.sh` と `scripts/lib-docker.sh` は他の script から `source` される helper で、直接実行しない。`scripts/alp.yml` は alp の設定ファイルで、shell script ではない。
+
+### `scripts/install-claude.sh`
+
+Claude Code CLI をインストールする。競技前の端末準備で使う。すでに `claude` が入っている場合は何もしない。
+
+```bash
+bash scripts/install-claude.sh
+```
+
+### `scripts/setup-tools.sh`
+
+分析実行サーバーに `alp`、`pt-query-digest`、`dstat` を入れる。nginx / DB / app が別サーバーの場合でも、ログを解析するサーバーでは実行する。
+
+```bash
+bash scripts/setup-tools.sh
+```
+
+### `scripts/setup-nginx.sh`
+
+systemd / ローカル nginx 環境で、nginx access log を LTSV 形式にする。nginx サーバーで実行する。Docker Compose 環境では通常 `setup-docker.sh` を使う。
+
+```bash
+bash scripts/setup-nginx.sh
+```
+
+### `scripts/setup-mysql.sh`
+
+systemd / ローカル MySQL または MariaDB 環境で slow query log を有効化する。DB サーバーで実行する。RDS / Aurora では使わず、`setup-rds.sh` を使う。
+
+```bash
+bash scripts/setup-mysql.sh
+```
+
+### `scripts/setup-app.sh`
+
+アプリサーバー初期化用。`reports/` を作り、webapp が git 管理されていなければ初期 commit を作る。systemd + Go では `APP_SERVICES` に対して GC trace 用 drop-in も設定する。
+
+```bash
+bash scripts/setup-app.sh
+```
+
+### `scripts/setup-docker.sh`
+
+Docker Compose 環境向け初期セットアップ。nginx / MySQL のログをホストへ出す override を作り、nginx LTSV と MySQL slow query log を有効化する。`DOCKER_COMPOSE_DIR`、`DOCKER_COMPOSE_FILE_ARGS`、`DOCKER_NGINX_SERVICE`、`DOCKER_MYSQL_SERVICE` は `scripts/env.sh` に記録しておく。
+
+```bash
+bash scripts/setup-docker.sh
+```
+
+### `scripts/setup-rds.sh`
+
+DB が AWS RDS / Aurora の場合に使う。共通ツールと nginx/app setup を呼び、RDS slow query log の設定状態を確認する。AWS CLI でパラメータグループも変更する場合は `--aws-cli` を付ける。
+
+```bash
+bash scripts/setup-rds.sh
+bash scripts/setup-rds.sh --aws-cli
+```
+
+### `scripts/setup.sh`
+
+1台構成向けの wrapper。`setup-tools.sh`、`setup-nginx.sh`、`setup-mysql.sh`、`setup-app.sh` を順に実行する。Docker Compose、RDS、複数台構成では個別 script を使う。
+
+```bash
+bash scripts/setup.sh
+```
+
+### `scripts/unsetup.sh`
+
+このリポジトリの setup script が入れた分析用設定の一部を戻す。alp / percona-toolkit / nginx LTSV / MySQL slow log / systemd GC trace drop-in を、生成物 marker を見ながら削除する。競技中に戻す場合は影響範囲を確認してから使う。
+
+```bash
+bash scripts/unsetup.sh
+```
+
+### `scripts/bench-locked.sh`
+
+rebuild / restart / benchmark を同じ排他ロックに入れて実行する。ログを benchmark window ごとに切り、dstat / docker stats / Go GC trace も取得する。競技中の評価は原則これ経由で行う。
+
+```bash
+bash scripts/bench-locked.sh
+bash scripts/bench-locked.sh --rebuild
+bash scripts/bench-locked.sh --no-reset-logs
+
+HEALTHCHECK_CMD='curl -fsS http://localhost/ >/dev/null' \
+bash scripts/bench-locked.sh --rebuild
+```
+
 ### `scripts/analyze.sh`
 
-ベンチ結果を解析して、アクセスログとスロークエリログの集計レポートを生成する shell。`scripts/env.sh` を読んで、環境に合わせた入力と出力先を決める。
+ベンチ結果を解析して、access log、slow query log、dstat、docker stats、Go GC trace を含むレポートを `reports/<timestamp>.md` に生成する。ローカル MySQL / Docker MySQL / systemd 環境向け。
 
 ```bash
 bash scripts/analyze.sh
 ```
 
-### `scripts/bench-locked.sh`
+### `scripts/analyze-rds.sh`
 
-再起動と benchmark を同じ排他ロックに入れて実行する shell。再起動直後の待機確認も含め、評価中の同時実行を避ける。
+RDS / Aurora 向け分析。`mysql.slow_log` テーブルを読み、`pt-query-digest` に流してレポートを生成する。`log_output=TABLE` が未設定の場合は AWS CLI によるログファイル取得を試す。
 
 ```bash
-bash scripts/bench-locked.sh
-
-bash scripts/bench-locked.sh --rebuild
-
-bash scripts/bench-locked.sh --no-reset-logs
-
-HEALTHCHECK_CMD='curl -fsS http://localhost/initialize >/dev/null' \
-bash scripts/bench-locked.sh --rebuild
+bash scripts/analyze-rds.sh
+SLOW_LOG_MINUTES=10 bash scripts/analyze-rds.sh
+ROTATE_RDS_SLOW_LOG=1 bash scripts/analyze-rds.sh
 ```
 
 ### `scripts/score-log.sh`
@@ -219,6 +320,16 @@ bash scripts/score-log.sh <score> [メモ]
 # 例
 bash scripts/score-log.sh 3200 "N+1解消"
 bash scripts/score-log.sh 5800 "画像をファイルシステムに移動"
+```
+
+### `scripts/improvement-log.sh`
+
+改善候補、ベンチ評価、worktree cleanup 判断を `reports/improvement-loop.md` に記録する。複数エージェントや複数 branch で改善候補を比較するときに使う。
+
+```bash
+bash scripts/improvement-log.sh candidate C1 high low feature/cache-user "cache user lookup"
+bash scripts/improvement-log.sh eval C1 feature/cache-user 12345 true merged "improved baseline"
+bash scripts/improvement-log.sh cleanup feature/cache-user /tmp/wt kept "left for audit"
 ```
 
 ---
@@ -267,7 +378,7 @@ bash scripts/setup-app.sh
 
 ### `templates/nginx-00-ltsv.conf`
 
-nginx の access log を LTSV 形式で出力するための設定。手動で適用する場合:
+nginx の access log を LTSV 形式で出力する設定。systemd nginx では `setup-nginx.sh` が使う。server / location に個別 `access_log` がある場合は、そちらも LTSV に合わせる。
 
 ```bash
 sudo cp templates/nginx-00-ltsv.conf /etc/nginx/conf.d/ltsv.conf
@@ -276,7 +387,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### `templates/mysql-slow.cnf`
 
-MySQL の slow query log を有効化・調整するための設定。手動で適用する場合:
+MySQL の slow query log を有効化する設定。`setup-mysql.sh` と `setup-docker.sh` が使う。ローカル MySQL / Docker MySQL 用で、RDS / Aurora は `rds-parameter-group.md` を使う。
 
 ```bash
 # Ubuntu / Debian
@@ -290,4 +401,52 @@ sudo systemctl restart mysqld
 
 ### `templates/nginx-staticfile.conf`
 
-静的ファイルを nginx から直接配信するための設定。DB から画像をファイルシステムへ移した後に使う。
+静的ファイルを nginx から直接配信する設定例。画像や CSS/JS をアプリや DB から切り離した後に使う。完全な server block 例なので、既存設定を丸ごと置き換えず、必要な `location` だけ差分適用する。
+
+### `templates/nginx-upstream.conf`
+
+アプリサーバーを複数台に分けるときの nginx upstream 例。`least_conn`、複数 app server、keepalive を含む。IP アドレス、port、既存 location は競技環境に合わせて差分適用する。
+
+### `templates/nginx-upstream-keepalive.conf`
+
+nginx から app への upstream 接続を keepalive する設定例。1台構成でも nginx -> app の接続 churn が重いときに評価する。既存 server block へ upstream と proxy header だけ差分適用する。
+
+### `templates/nginx-final-no-access-log.conf`
+
+最終ベンチ直前に nginx access log を止めるための設定。alp 解析ができなくなるので、分析が終わって採用構成が固まった Phase 6 でだけ使う。
+
+### `templates/h2o-ltsv.conf`
+
+H2O web server の access log を LTSV 形式にする設定例。nginx ではなく H2O が入口の環境で使う。既存 `/etc/h2o/h2o.conf` の top-level `access-log` だけを追加または置換する。
+
+### `templates/mysql-buffer-pool.cnf`
+
+`innodb_buffer_pool_size` を段階評価するための MySQL 設定。`<BUFFER_POOL_SIZE>` を `256M`、`512M` など実測する値に置換して、別ファイルとして配置する。
+
+### `templates/mysql-connection-cache.cnf`
+
+MySQL の接続 churn、table open cache、一時テーブル周りを保守的に調整する設定。小さい Docker container でも破綻しにくい値にしてあるが、必ず単体差分で評価する。
+
+### `templates/mysql-durability-relaxed.cnf`
+
+`innodb_flush_log_at_trx_commit=2` と `sync_binlog=0` で fsync 圧を下げる競技向け設定。クラッシュ耐久性を緩めるため、initialize で復元できるか、競技ルール上問題ないかを確認してから評価する。
+
+### `templates/mysql-remote.cnf`
+
+DB サーバーを app サーバーから接続できるように `bind-address=0.0.0.0` と接続数を設定する例。複数台構成で DB を分離するときに、DB サーバー側へ差分適用する。
+
+### `templates/rds-parameter-group.md`
+
+RDS / Aurora で slow query log を取るためのパラメータグループ手順。`slow_query_log=1`、`long_query_time=0`、`log_output=TABLE` を設定し、`analyze-rds.sh` で読む。
+
+### `templates/go-pprof.snippet`
+
+Go アプリに `net/http/pprof` endpoint を追加するコード片。`/isucon-pprof` または Phase 3 の pprof サイクルで使う。Docker Compose 環境では別途 port expose が必要。
+
+### `templates/memcached-competition.command`
+
+memcached を cache / session store として使っている場合の command 例。`-m 256 -c 4096 -t 2` を systemd `ExecStart` や Docker Compose `command:` に差分適用して評価する。正データを保持している場合は使わない。
+
+### `templates/redis-cache.conf`
+
+Redis を cache または再構築可能な session store として使う場合の競技向け設定。永続化を止め、`allkeys-lru` を使う。Redis が正データの場合は使わない。

@@ -92,7 +92,8 @@ run_metrics() {
   if [ "${SKIP_CW_METRICS:-0}" = "1" ]; then
     return
   fi
-  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/metrics.sh" --since-epoch "$BENCH_START_EPOCH" 2>&1 || {
+  # stderr はレポート本文に混ぜず端末側へ流す（report を markdown のまま保つ）。
+  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/metrics.sh" --since-epoch "$BENCH_START_EPOCH" || {
     echo "## CloudWatch Metrics"
     echo ""
     echo "> metrics.sh failed (check aws/python3 and IAM cloudwatch:GetMetricStatistics). Set SKIP_CW_METRICS=1 to skip."
@@ -107,7 +108,8 @@ run_pi() {
   if [ "${DB_TYPE:-}" != "rds" ] && [ "${DB_TYPE:-}" != "aurora" ]; then
     return
   fi
-  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/pi.sh" --since-epoch "$BENCH_START_EPOCH" 2>&1 || {
+  # stderr はレポート本文に混ぜず端末側へ流す（report を markdown のまま保つ）。
+  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/pi.sh" --since-epoch "$BENCH_START_EPOCH" || {
     echo "## Performance Insights"
     echo ""
     echo "> pi.sh failed (check aws/python3 and IAM pi:GetResourceMetrics / rds:DescribeDBInstances). Set SKIP_PI=1 to skip."

@@ -256,7 +256,7 @@ SQS message body は大会ごとに違うため、自動探索で確定しない
 
 ### `/goal` の Phase 指定
 
-初動後に改善ループへ入る場合は Phase 2 を指定する。次の `/goal` 例は `references/ecs/phase2-improvement-loop.md` を読むため、Phase 2 用。
+`/isucon-survey` 後にまず Phase 1 の検証・補完を行う。次の `/goal` 例は `references/ecs/phase1-survey.md` を読むため、Phase 1 用。
 
 ```text
 /goal
@@ -266,31 +266,34 @@ SQS message body は大会ごとに違うため、自動探索で確定しない
 - $TOOL_REPO/references/agent-rules.md
 - $TOOL_REPO/references/orchestration-rules.md
 - $TOOL_REPO/references/phase-boundaries.md
-- $TOOL_REPO/references/ecs/phase2-improvement-loop.md
+- $TOOL_REPO/references/ecs/phase1-survey.md
 ```
 
 目的が違う場合は最後の Phase 手順だけ差し替える。
 
 ```text
-# 初動調査
+# Phase 1: 初動検証
 - $TOOL_REPO/references/ecs/phase1-survey.md
 
-# pprof
+# Phase 2: 改善ループ
+- $TOOL_REPO/references/ecs/phase2-improvement-loop.md
+
+# Phase 3: pprof
 - $TOOL_REPO/references/ecs/phase3-pprof-cycle.md
 
-# infra tuning
+# Phase 4: infra tuning
 - $TOOL_REPO/references/ecs/phase4-infra-tuning.md
 
-# scale
+# Phase 5: scale
 - $TOOL_REPO/references/ecs/phase5-scale.md
 
-# final prep
+# Phase 6: final prep
 - $TOOL_REPO/references/ecs/phase6-final-prep.md
 ```
 
 ### Phase 対応
 
-- Phase 1: `references/ecs/phase1-survey.md`
+- Phase 1: `references/ecs/phase1-survey.md` (`/isucon-survey` 結果の検証・補完)
 - Phase 2: `references/ecs/phase2-improvement-loop.md`
 - Phase 3: `references/ecs/phase3-pprof-cycle.md`
 - Phase 4: `references/ecs/phase4-infra-tuning.md`

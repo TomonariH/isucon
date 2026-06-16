@@ -83,6 +83,19 @@ mysql_installed() {
   return 1
 }
 
+# mysql/mariadb クライアント（mysql コマンド）を確保する。
+# RDS / Aurora 接続（setup-rds.sh / analyze-rds.sh）に必要だが、
+# DB がリモートのサーバーには未導入のことがある（特に Amazon Linux 2023）。
+ensure_mysql_client() {
+  command -v mysql &>/dev/null && return 0
+  case "$(detect_os_family)" in
+    debian) pkg_install default-mysql-client || pkg_install mariadb-client ;;
+    rhel)   pkg_install mariadb105 || pkg_install mariadb || pkg_install mysql ;;
+    *) return 1 ;;
+  esac
+  command -v mysql &>/dev/null
+}
+
 # /isucon-survey が生成した env.sh を読む。
 load_isucon_env() {
   local script_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"

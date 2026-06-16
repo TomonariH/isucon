@@ -32,11 +32,17 @@ install_pt_query_digest() {
     return
   fi
   log "Installing percona-toolkit..."
-  ensure_percona_repo
-  pkg_install percona-toolkit
-  mkdir -p "$STATE_DIR"
-  touch "$STATE_DIR/percona-toolkit-installed"
-  log "pt-query-digest installed"
+  # Amazon Linux 2023 など RHEL 系では percona repo / 依存解決に失敗することがある。
+  # pt-query-digest が無くても analyze.sh / analyze-rds.sh はスロークエリ解析を
+  # スキップして継続するため、ここで失敗しても setup 全体を止めない。
+  if { ensure_percona_repo && pkg_install percona-toolkit; } 2>/dev/null; then
+    mkdir -p "$STATE_DIR"
+    touch "$STATE_DIR/percona-toolkit-installed"
+    log "pt-query-digest installed"
+  else
+    log "WARNING: could not install percona-toolkit (pt-query-digest)."
+    log "  analyze.sh / analyze-rds.sh はスロークエリ解析をスキップして継続します。"
+  fi
 }
 
 install_dstat() {

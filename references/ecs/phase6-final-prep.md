@@ -24,6 +24,7 @@ ECS/RDS の最終提出用構成を固定し、不要な分析設定を外す。
    - temporary security group / route
    - RDS/Aurora `long_query_time=0` や `slow_query_log=1` が最終スコアに不要なら parameter group で戻す
    - nginx access log を止める場合は、分析が終わってから image/config に反映する
+   - `metrics.sh` / `pi.sh` / `iam-check.sh` は AWS API 側の read-only 取得で最終 image / task には何も足さないため、剥がす対象ではない。Performance Insights は低オーバーヘッド・無料枠7日なので残置してよい。最終 image から外すのは pprof と、上記の分析用 parameter（`long_query_time=0` 等）のみ。
 
 3. 最終 image を build/push/deploy する。
 

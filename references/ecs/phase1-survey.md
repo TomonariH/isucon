@@ -134,8 +134,11 @@ SQS benchmark は worker 側で非同期に実行され、`send-message` は Mes
 
    `scripts/ecs/discover.sh` の `## SQS Queues` と `## CloudWatch Log Groups` 出力から候補を探す。
 
-3. 返却経路が確定したら `bench-sqs.sh` を結果取得込みに作り直す（`BENCH_RESULT_MODE`）。現状 `BENCH_RESULT_MODE` を設定すると「not implemented yet」と表示して duration-wait にフォールバックする。これが Phase 1 後のリビルドの接続点。
-   - 未確定の間は duration-wait で P0-A（空 analyze 窓）を回避し、score は `scripts/score-log.sh <score> "<note>"` で手動記録する。
+3. 返却経路が確定したら `bench-sqs.sh` の `BENCH_RESULT_MODE` に対応する mode を設定し、その mode の fetch logic を実装する。現状は 3 mode の **stub 枠**があり、設定すると必要な env を表示して duration-wait にフォールバックする（＝ここが Phase 1 後の接続点で、「作り直し」ではなく「fetch を埋める」作業になる）。
+   - `BENCH_RESULT_MODE=sqs`: 結果用 SQS キューをポーリング。`BENCH_RESULT_QUEUE_URL` または `BENCH_RESULT_QUEUE_NAME`、score 抽出に `BENCH_SCORE_JQ`、送信 MessageId / correlation id で突合。
+   - `BENCH_RESULT_MODE=log`: ベンチ worker の CloudWatch Logs を読む。`BENCH_RESULT_LOG_GROUP`、`BENCH_PASS_REGEX` / `BENCH_SCORE_REGEX` で pass-fail と score を抽出。
+   - `BENCH_RESULT_MODE=http`: ポータル / 結果 API をポーリング。`BENCH_RESULT_URL`、`BENCH_SCORE_JQ` で score を抽出。
+   - 実装したら score を `scripts/score-log.sh` に自動連携する。未確定の間は duration-wait で P0-A（空 analyze 窓）を回避し、score は `scripts/score-log.sh <score> "<note>"` で手動記録する。
 
 ## Verify Aurora Slow Query
 

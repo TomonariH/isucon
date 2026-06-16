@@ -38,10 +38,18 @@ Environment:
                         the analyze window (BENCH_START_EPOCH..now) is populated.
   BENCH_RESULT_MARGIN_SEC  extra seconds waited after BENCH_DURATION_SEC for CloudWatch
                         log ingestion lag. Default 15. Total wait = duration + margin.
-  BENCH_RESULT_MODE     future extension seam for fetching the real score/pass-fail
-                        (e.g. result SQS queue / worker logs / portal HTTP). Not
-                        implemented yet; if set to anything, a notice is printed and
-                        the script falls back to the duration wait. Default empty.
+  BENCH_RESULT_MODE     extension seam for fetching the real score/pass-fail.
+                        Default empty = duration-wait only. Recognized stubs
+                        (fetch logic filled in after Phase 1 confirms the mechanism;
+                        until then each falls back to the duration wait):
+                          sqs  - poll a result queue. Needs BENCH_RESULT_QUEUE_URL
+                                 or BENCH_RESULT_QUEUE_NAME; extract score with
+                                 BENCH_SCORE_JQ; match by send MessageId/correlation id.
+                          log  - read the bench worker's CloudWatch Logs. Needs
+                                 BENCH_RESULT_LOG_GROUP; extract with BENCH_PASS_REGEX
+                                 and BENCH_SCORE_REGEX since the send time.
+                          http - poll a portal/result endpoint. Needs BENCH_RESULT_URL;
+                                 extract score with BENCH_SCORE_JQ.
 
 Flags:
   --dry-run             print the resolved request without sending; never waits.
@@ -160,8 +168,31 @@ case "$MARGIN" in
     ;;
 esac
 
+# BENCH_RESULT_MODE is the seam for automated score/pass-fail retrieval (P0-B).
+# The fetch logic is filled in after Phase 1 confirms the contest's result
+# mechanism; until then each known mode documents its required env and falls
+# back to the duration wait below.
 if [ -n "${BENCH_RESULT_MODE:-}" ]; then
-  echo "[ecs] BENCH_RESULT_MODE='${BENCH_RESULT_MODE}' not implemented yet; will be built after Phase 1 confirms the result mechanism" >&2
+  case "$BENCH_RESULT_MODE" in
+    sqs)
+      ecs_log "BENCH_RESULT_MODE=sqs (stub): result-queue fetch not implemented yet."
+      ecs_log "  TODO(Phase1): poll BENCH_RESULT_QUEUE_URL/BENCH_RESULT_QUEUE_NAME via receive-message,"
+      ecs_log "  match the send MessageId/correlation id, extract score with BENCH_SCORE_JQ."
+      ;;
+    log)
+      ecs_log "BENCH_RESULT_MODE=log (stub): worker-log fetch not implemented yet."
+      ecs_log "  TODO(Phase1): filter-log-events on BENCH_RESULT_LOG_GROUP since the send time,"
+      ecs_log "  extract pass/fail with BENCH_PASS_REGEX and score with BENCH_SCORE_REGEX."
+      ;;
+    http)
+      ecs_log "BENCH_RESULT_MODE=http (stub): portal HTTP fetch not implemented yet."
+      ecs_log "  TODO(Phase1): poll BENCH_RESULT_URL until done, extract score with BENCH_SCORE_JQ."
+      ;;
+    *)
+      ecs_log "BENCH_RESULT_MODE='${BENCH_RESULT_MODE}' unknown; expected sqs|log|http."
+      ;;
+  esac
+  ecs_log "falling back to duration wait until the result fetch is implemented (see Phase 1)."
 fi
 
 total=$((DURATION + MARGIN))

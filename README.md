@@ -291,16 +291,9 @@ SQS message body は大会ごとに違うため、自動探索で確定しない
 - $TOOL_REPO/references/ecs/phase6-final-prep.md
 ```
 
-### Phase 対応
-
-- Phase 1: `references/ecs/phase1-survey.md` (`/isucon-survey` 結果の検証・補完)
-- Phase 2: `references/ecs/phase2-improvement-loop.md`
-- Phase 3: `references/ecs/phase3-pprof-cycle.md`
-- Phase 4: `references/ecs/phase4-infra-tuning.md`
-- Phase 5: `references/ecs/phase5-scale.md`
-- Phase 6: `references/ecs/phase6-final-prep.md`
-
 ### 基本ループ
+
+`scripts/ecs/bench-locked.sh` は `BENCH_CMD` を呼ぶだけなので、SQS benchmark でも通常のローカル benchmark コマンドでも基本形は同じ。SQS 環境では Phase 1 で `bench-sqs.sh --dry-run` による message body 確認を済ませたうえで、`BENCH_CMD='bash scripts/ecs/bench-sqs.sh'` にして benchmark request の送信を排他ロック内に入れる。
 
 ```bash
 # deploy なし baseline
@@ -308,11 +301,13 @@ bash scripts/ecs/bench-locked.sh --analyze
 
 # app 修正後: build/push/deploy/wait/bench/analyze
 bash scripts/ecs/bench-locked.sh --rebuild --analyze
+```
 
-# SQS benchmark request だけ送る
-bash scripts/ecs/bench-sqs.sh
+SQS では `send-message` が benchmark の完了や score を返すとは限らない。配布資料の手順に従い、benchmark 結果の取得方法、pass/fail message、score 記録方法を `reports/survey.md` に残す。SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command をそのまま設定する。
 
-# benchmark 後に手動分析だけ行う
+benchmark 後に分析だけをやり直す場合:
+
+```bash
 BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
 ```
 

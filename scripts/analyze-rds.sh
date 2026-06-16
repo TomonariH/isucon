@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-REPORT_FILE="$REPO_DIR/reports/$TIMESTAMP.md"
+REPORT_FILE="${REPORT_FILE:-$REPO_DIR/reports/$TIMESTAMP.md}"
 
 # /isucon-survey が生成した env.sh を読む（RDS 接続情報・ログパスを含む）
 [ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"

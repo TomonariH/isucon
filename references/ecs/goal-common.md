@@ -1,0 +1,85 @@
+# ECS/RDS Goal Common Rules
+
+ECS + RDS 環境では、既存の `references/goals/` ではなくこの `references/ecs/` を正本にする。
+作業は ECS task 内ではなく、原則として AWS CLI と Docker が使えるローカル端末または作業用 EC2 から行う。
+
+## Environment
+
+最初に `$TOOL_REPO/scripts/env.sh` を読む。存在する場合は `source "$TOOL_REPO/scripts/env.sh"` して、少なくとも次を確認する:
+
+- `TOOL_REPO`
+- `ISUCON_RUNTIME=ecs`
+- `ISUCON_WEBAPP_DIR` または `APP_BUILD_DIR`
+- `AWS_REGION`
+- `ECS_CLUSTER`
+- `ECS_SERVICE`
+- `ECS_TASK_DEFINITION`
+- `ECS_APP_CONTAINER`
+- `ECS_NGINX_CONTAINER`
+- `ECS_LOG_GROUP` / `ECS_NGINX_LOG_GROUP` / `ECS_APP_LOG_GROUP`
+- `ECS_LOG_STREAM_PREFIX` / `ECS_NGINX_LOG_STREAM_PREFIX` / `ECS_APP_LOG_STREAM_PREFIX`
+- `ECR_IMAGE`
+- `IMAGE_TAG`
+- `BENCH_TARGET_URL`
+- `BENCH_CMD`
+- `REBUILD_CMD`
+- `DB_TYPE=rds|aurora`
+- `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASS` / `DB_NAME`
+- `RDS_INSTANCE`
+- `RDS_PARAM_GROUP`
+
+不明な値は推測で埋めない。`scripts/ecs/survey.sh` と AWS CLI で調査し、未確定として残す。
+
+## Execution Model
+
+- rebuild / deploy / benchmark は必ず `$TOOL_REPO/scripts/ecs/bench-locked.sh` で直列化する。
+- ECS deploy は ECR push + `aws ecs update-service --force-new-deployment` + `aws ecs wait services-stable` を基本にする。
+- task 内で設定ファイルを直接編集しない。変更は app repo、Docker image、task definition、ECS service、RDS parameter group に反映する。
+- nginx/app logs は CloudWatch Logs から取得する。ローカル file path 前提の `NGINX_ACCESS_LOG` に依存しない。
+- RDS slow query は `mysql.slow_log` table または AWS CLI の RDS log download から取得する。
+
+## Benchmark Exclusivity
+
+- benchmark は常に1つだけ実行する。
+- deploy 中に benchmark しない。
+- benchmark の前後で `BENCH_START_EPOCH` を記録し、その時刻以降の CloudWatch Logs を分析する。
+- ベンチ後は `$TOOL_REPO/scripts/ecs/analyze.sh` を実行し、必要に応じて `$TOOL_REPO/scripts/score-log.sh` で記録する。
+
+## Failure Diagnosis
+
+fail が出た場合、即ロールバック・即却下しない。最低限以下を確認する:
+
+- benchmark stdout / stderr
+- `aws ecs describe-services`
+- `aws ecs describe-tasks`
+- ECS deployment event
+- app container CloudWatch Logs
+- nginx container CloudWatch Logs
+- RDS slow query / connection error
+- target URL healthcheck
+- security group / task IP / port mapping
+
+特に ECS では次を疑う:
+
+- 新 task が stable になっていない
+- 古い image tag が使われている
+- task definition が想定 revision と違う
+- CloudWatch log stream prefix の取り違え
+- security group が RDS / benchmark / pprof を許可していない
+- app が local filesystem / local memory session に依存している
+
+## Git Safety
+
+- `git reset --hard` などの破壊的操作は禁止。
+- unrelated changes を巻き戻さない。
+- 採用した app 変更は commit を残す。
+- ECS/RDS 操作は、変更前後の ARN、revision、parameter group 名、image tag を report に記録する。
+
+## Recording
+
+- アプリ改善: `$TOOL_REPO/scripts/improvement-log.sh`
+- スコア: `$TOOL_REPO/scripts/score-log.sh`
+- ECS/RDS 調査: `$TOOL_REPO/reports/ecs-survey.md`
+- ミドルウェア評価: `$TOOL_REPO/reports/ecs-infra-tuning.md`
+- scale 評価: `$TOOL_REPO/reports/ecs-scale.md`
+- 最終整備: `$TOOL_REPO/reports/ecs-final-prep.md`

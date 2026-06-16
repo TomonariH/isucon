@@ -25,6 +25,14 @@ scripts/
   bench-locked.sh   # rebuild / benchmark の排他実行とログ window 管理
   improvement-log.sh # 改善候補・評価・cleanup 判断を reports に記録
   score-log.sh      # スコアを reports/scores.md に記録
+  ecs/
+    survey.sh       # ECS service/task definition/log 調査 report を生成
+    deploy.sh       # Docker build -> ECR push -> ECS force deployment
+    wait-stable.sh  # ECS service stable と healthcheck を待つ
+    bench-locked.sh # ECS deploy / benchmark の排他実行
+    logs.sh         # CloudWatch Logs から nginx/app stdout を取得
+    analyze.sh      # ECS nginx stdout + RDS slow log の分析 report を生成
+    pprof.sh        # ECS pprof 取得補助
 templates/
   nginx-00-ltsv.conf        # nginx LTSV アクセスログ設定
   mysql-slow.cnf            # MySQL スロークエリログ設定
@@ -47,6 +55,7 @@ references/
   orchestration-rules.md    # 複数エージェント・worktree・merge採否ルール
   phase-boundaries.md       # Phase の責務境界
   goals/                    # Phase 別 /goal 手順
+  ecs/                      # ECS + RDS 専用 Phase 手順
 .codex/skills/
   isucon-*                  # Codex 用 skill wrapper（.claude/commands を正本として参照）
 .claude/commands/
@@ -194,6 +203,60 @@ bash scripts/setup-app.sh
 
 ---
 
+## ECS/RDS 環境の戦い方
+
+ECS + RDS 環境では、既存の `systemd` / Docker Compose 向け Phase 手順に条件分岐を足さず、`references/ecs/` を正本にする。作業場所は ECS task 内ではなく、AWS CLI と Docker が使えるローカル端末または作業用 EC2 を基本にする。
+
+ECS task は入れ替わる前提なので、running container 内で直接設定を書き換えない。変更は app repo、Docker image、ECR tag、ECS service/task definition、RDS parameter group に反映する。
+
+作業端末には AWS CLI、Docker、python3、alp、RDS 解析に必要な mysql client / pt-query-digest を用意する。alp や pt-query-digest は通常 `scripts/setup-tools.sh` で入れる。
+
+### 初動
+
+```bash
+source scripts/env.sh 2>/dev/null || true
+ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
+```
+
+`reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。以降の `/goal` では次を読む。
+
+```text
+/goal
+まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、ECS/RDS 向け Phase を実行してください。
+
+- $TOOL_REPO/references/ecs/goal-common.md
+- $TOOL_REPO/references/agent-rules.md
+- $TOOL_REPO/references/orchestration-rules.md
+- $TOOL_REPO/references/phase-boundaries.md
+- $TOOL_REPO/references/ecs/phase2-improvement-loop.md
+```
+
+### Phase 対応
+
+- Phase 1: `references/ecs/phase1-survey.md`
+- Phase 2: `references/ecs/phase2-improvement-loop.md`
+- Phase 3: `references/ecs/phase3-pprof-cycle.md`
+- Phase 4: `references/ecs/phase4-infra-tuning.md`
+- Phase 5: `references/ecs/phase5-scale.md`
+- Phase 6: `references/ecs/phase6-final-prep.md`
+
+### 基本ループ
+
+```bash
+# deploy なし baseline
+bash scripts/ecs/bench-locked.sh --analyze
+
+# app 修正後: build/push/deploy/wait/bench/analyze
+bash scripts/ecs/bench-locked.sh --rebuild --analyze
+
+# benchmark 後に手動分析だけ行う
+BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
+```
+
+ECS では access log はローカルファイルではなく CloudWatch Logs から取得する。RDS slow query は `mysql.slow_log` または RDS log file から読む。pprof は ECS Exec、task IP、または一時 security group のどれで取るかを Phase 3 で決める。
+
+---
+
 ## スクリプトリファレンス
 
 ### 使い方の前提
@@ -330,6 +393,67 @@ bash scripts/score-log.sh 5800 "画像をファイルシステムに移動"
 bash scripts/improvement-log.sh candidate C1 high low feature/cache-user "cache user lookup"
 bash scripts/improvement-log.sh eval C1 feature/cache-user 12345 true merged "improved baseline"
 bash scripts/improvement-log.sh cleanup feature/cache-user /tmp/wt kept "left for audit"
+```
+
+### `scripts/ecs/survey.sh`
+
+ECS service、task definition、running task、container log 設定を AWS CLI から調査し、`reports/ecs-survey.md` を生成する。`scripts/env.sh` の ECS 用候補値も report に出す。
+
+```bash
+ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
+```
+
+### `scripts/ecs/deploy.sh`
+
+Docker image を build して ECR に push し、ECS service を `--force-new-deployment` で更新して stable まで待つ。`REBUILD_CMD='bash scripts/ecs/deploy.sh'` として使う。
+
+```bash
+bash scripts/ecs/deploy.sh
+SKIP_DOCKER_BUILD=1 bash scripts/ecs/deploy.sh
+```
+
+### `scripts/ecs/wait-stable.sh`
+
+ECS service の `services-stable` を待ち、`HEALTHCHECK_CMD` または `BENCH_TARGET_URL` があれば endpoint の疎通も確認する。
+
+```bash
+bash scripts/ecs/wait-stable.sh
+```
+
+### `scripts/ecs/bench-locked.sh`
+
+ECS deploy / benchmark を排他実行する。`--rebuild` で `REBUILD_CMD` を実行し、`--analyze` で benchmark window の CloudWatch Logs と RDS slow log を解析する。
+
+```bash
+bash scripts/ecs/bench-locked.sh --analyze
+bash scripts/ecs/bench-locked.sh --rebuild --analyze
+```
+
+### `scripts/ecs/logs.sh`
+
+CloudWatch Logs から nginx または app container の stdout を取得する。nginx access log が stdout に出ている ECS 環境で alp 解析の入力を作る。
+
+```bash
+bash scripts/ecs/logs.sh --kind nginx --since-epoch <epoch> --out reports/.runtime/ecs-nginx.log
+bash scripts/ecs/logs.sh --kind app --since-epoch <epoch> --out reports/.runtime/ecs-app.log
+```
+
+### `scripts/ecs/analyze.sh`
+
+ECS nginx stdout を CloudWatch Logs から取得し、alp で解析する。DB が RDS / Aurora の場合は `analyze-rds.sh` を使って slow query も report に含める。
+
+```bash
+bash scripts/ecs/analyze.sh
+BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
+```
+
+### `scripts/ecs/pprof.sh`
+
+ECS 環境で pprof を取る補助。`PPROF_URL` がある場合は profile を取得して `go tool pprof` の top 出力を保存する。URL がない場合は ECS Exec で container 内から取得する手順を表示する。
+
+```bash
+PPROF_URL='http://<reachable-host>:6060/debug/pprof/profile' bash scripts/ecs/pprof.sh
+bash scripts/ecs/pprof.sh
 ```
 
 ---

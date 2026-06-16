@@ -36,6 +36,19 @@ ECS + RDS 環境では、既存の `references/goals/` ではなくこの `refer
 
 不明な値は推測で埋めない。`scripts/ecs/survey.sh` と AWS CLI で調査し、未確定として残す。
 
+## Compact / Resume Safety
+
+compact、中断、別 turn からの再開後は、作業を続ける前に必ず次を確認する。
+
+1. 最新のユーザー指示を読む。特に「push して」「セルフレビューして」「Phase 4 で Phase 6 をしない」などの継続条件を確認する。
+2. `git status --short --branch` を確認し、未コミット変更・未追跡ファイル・現在 branch を把握する。
+3. `$TOOL_REPO/scripts/env.sh`、`reports/survey.md`、`reports/aws-survey.md`、`reports/ecs-survey.md`、最新 `reports/*.md` を必要に応じて読み直す。
+4. 現在実行中の `references/ecs/` Phase reference と、この `references/ecs/goal-common.md` を読み直す。
+5. 未完了タスク、禁止事項、AWS 操作対象、検証方法、push 要否を整理してから再開する。
+6. compact 前の指示が不明、または相互に矛盾して見える場合は、推測で進めずユーザーに確認する。
+
+この確認は Phase 固有手順より優先する。
+
 ## Execution Model
 
 - rebuild / deploy / benchmark は必ず `$TOOL_REPO/scripts/ecs/bench-locked.sh` で直列化する。

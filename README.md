@@ -142,6 +142,7 @@ bash scripts/setup-app.sh
 ```text
 /goal
 まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Phase 2 の改善ループを実行してください。
+compact や中断から復帰した場合は、作業再開前に `goal-common.md` の Compact / Resume Safety を実行してください。
 
 - $TOOL_REPO/references/goal-common.md
 - $TOOL_REPO/references/agent-rules.md
@@ -159,6 +160,7 @@ bash scripts/setup-app.sh
 ```text
 /goal
 まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Phase 3 の pprof サイクルを実行してください。
+compact や中断から復帰した場合は、作業再開前に `goal-common.md` の Compact / Resume Safety を実行してください。
 
 - $TOOL_REPO/references/goal-common.md
 - $TOOL_REPO/references/agent-rules.md
@@ -176,6 +178,7 @@ bash scripts/setup-app.sh
 ```text
 /goal
 まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Phase 4 のミドルウェア秘伝のタレ評価を実行してください。
+compact や中断から復帰した場合は、作業再開前に `goal-common.md` の Compact / Resume Safety を実行してください。
 
 - $TOOL_REPO/references/goal-common.md
 - $TOOL_REPO/references/agent-rules.md
@@ -211,6 +214,7 @@ bash scripts/setup-app.sh
 ```text
 /goal
 まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Phase 6 の最終提出用サーバー整備を実行してください。
+compact や中断から復帰した場合は、作業再開前に `goal-common.md` の Compact / Resume Safety を実行してください。
 
 - $TOOL_REPO/references/goal-common.md
 - $TOOL_REPO/references/agent-rules.md
@@ -275,6 +279,7 @@ SQS message body は大会ごとに違うため、自動探索で確定しない
 ```text
 /goal
 まずツールリポジトリで `source scripts/env.sh` してから、以下を順に読み、Fargate/ALB/Aurora 向け Phase を実行してください。
+compact や中断から復帰した場合は、作業再開前に `references/ecs/goal-common.md` の Compact / Resume Safety を実行してください。
 
 - $TOOL_REPO/references/ecs/goal-common.md
 - $TOOL_REPO/references/agent-rules.md

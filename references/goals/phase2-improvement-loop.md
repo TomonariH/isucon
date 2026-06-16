@@ -14,6 +14,9 @@
 1. `APP_REPO="$(dirname "$ISUCON_WEBAPP_DIR")"` を設定し、`$APP_REPO` の `feature/isucon-work` に移動する。
 2. `$TOOL_REPO/scripts/bench-locked.sh` を1回実行し、現在の基準スコアを確認する。
 3. `$TOOL_REPO/scripts/analyze.sh` を実行し、その結果を `/isucon-analyze` スキルで分析する。
+   - DB が RDS / Aurora の場合、`analyze.sh` は自動的に `analyze-rds.sh`（`mysql.slow_log` テーブル）へ委譲する。
+     RDS の slow ログはベンチ毎に自動リセットされないため、各ベンチでクリーンな窓を得たいときは
+     `ROTATE_RDS_SLOW_LOG=1 bash $TOOL_REPO/scripts/analyze-rds.sh` を使う（読み取り後に `mysql.slow_log` をローテートする）。
 4. `/isucon-analyze` の結果から、高インパクト・中インパクトの提案だけを抽出する。
 5. 抽出した候補を、候補ごとに `$TOOL_REPO/scripts/improvement-log.sh candidate ...` で記録する。
 6. 高・中インパクトの提案がなければ終了する。

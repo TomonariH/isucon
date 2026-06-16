@@ -21,15 +21,23 @@
 1. 採用済み変更を確認する。
    - app リポジトリの branch / commit / diff を確認する。
    - 採用した nginx / MySQL / Redis / memcached / systemd / Docker Compose 設定を一覧化する。
+   - DB が RDS / Aurora の場合は、採用した RDS パラメータグループの変更分（`innodb_*` 等）も一覧に含める。
    - 未採用・評価途中の設定ファイルを残していないか確認する。
 2. 分析用設定を外す。
    - pprof 用ポート公開、`net/http/pprof`、pprof goroutine は最終スコアに不要なら外す。
    - MySQL slow query log は最終測定用に off へ戻すか、少なくとも `long_query_time=0` をやめる。
+     - ローカル / Docker MySQL: `.cnf` または `SET GLOBAL` で戻す。
+     - RDS / Aurora: ローカル設定ではなくパラメータグループで戻す（`slow_query_log=0`、
+       または `long_query_time` をデフォルトへ。`bash $TOOL_REPO/scripts/setup-rds.sh --aws-cli` で
+       入れた場合は同じパラメータグループを戻す）。加えて `mysql.slow_log` テーブルに蓄積したデータを
+       `CALL mysql.rds_rotate_slow_log;`（または `ROTATE_RDS_SLOW_LOG=1 bash $TOOL_REPO/scripts/analyze-rds.sh`）で掃除する。
    - nginx access log は最終測定用に off または軽量化する。
    - Docker Compose 環境では、分析専用 override に最終構成が依存していないか確認する。
 3. 起動経路を固定する。
    - systemd 環境では `systemctl cat <service>` を確認する。
    - Docker Compose 環境では、最終ベンチで使う compose ファイル列を明確にする。
+   - RDS / Aurora 環境では、採用したパラメータグループ設定が反映済みか確認する
+     （`ApplyMethod=pending-reboot` の項目は DB 再起動が必要。再起動後も値が保持される）。
    - 最終スコアに必要な設定は通常起動で読まれる場所に置く。
    - nginx / app / DB / cache を再起動しても採用設定が残ることを確認する。
 4. データ初期化と静的ファイルを確認する。

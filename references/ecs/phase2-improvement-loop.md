@@ -16,6 +16,7 @@
 - 公式 score の自動取得が未確定（P0-B / Phase1 待ち）の間は、`scripts/ecs/analyze.sh` の ALB `RequestCount`（window 合計）と `TargetResponseTime` p99、Performance Insights の Total DB Load(AAS) を**暫定ランキング指標**にして候補を一次選別する（多くの ISUCON は throughput 連動なので RequestCount 増 / p99 減 / AAS 減が代理になる）。RequestCount は **benchmark が実際に叩く ALB** のものを見る（公開 frontend ALB 経由で入る構成なら frontend ALB、backend を直叩きするなら backend ALB。`metrics.sh` は backend 既定で frontend は env があれば両方出す）。公式 score が取れたら `score-log.sh` で確定記録する。
 - Performance Insights は 1 分粒度なので、60s 前後のベンチ 1 回では SQL 別 AAS が 1–2 datapoint でノイズに弱い。Top SQL のランキングを信頼するときはベンチを数回/長めに回すか、複数 analyze をまたいで傾向を見る。
 - 候補を却下する場合は統合 branch を再 deploy して baseline 構成に戻してから次の候補を評価する（改悪 image を動かしたままにしない）。
+- merge 後の評価でスコア改善が消えた場合は即 revert しない。fail / conflict 解消ミス / 実装バグ / deploy 対象ミスなら原因を直して再評価し、直せなければ採用しない。単体改善により別リソースの飽和や次ボトルネックが露出しただけなら、その統合状態を暫定 baseline として次のボトルネック解消に進む。
 
 1. app repo を確認し、統合 branch に移動する。
 2. baseline を取る。
@@ -35,8 +36,9 @@
    ```
 
 7. 採用する修正だけ統合 branch に merge し、merge 後も ECS deploy + benchmark で確認する。
-8. score と採否を記録する。
-9. 高・中インパクト提案がなくなるまで繰り返す。
+8. merge 後に悪化・fail した場合は、修正バグか次ボトルネック露出かを切り分ける。次ボトルネック露出なら暫定 baseline として継続し、修正バグなら直して再評価する。
+9. score と採否・暫定 baseline 判断を記録する。
+10. 高・中インパクト提案がなくなるまで繰り返す。
 
 ## Fargate/Aurora 固有の優先候補
 

@@ -45,5 +45,7 @@
 
 - merge は `$APP_REPO` の `feature/isucon-work` に対して行う。
 - merge 後は `$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
-- pass し、スコア改善が維持される場合のみ merge を確定する。
-- コンフリクト解決が不確実、fail 原因を解消できない、またはスコア改善が消えた場合は、その修正は merge しない。
+- pass し、スコア改善が維持される場合は merge を確定する。
+- merge 後に fail した場合、またはスコア改善が消えた場合は即 revert しない。まず conflict 解消ミス・実装バグ・設定漏れ・deploy 対象ミスと、throughput 増による次ボトルネック露出を切り分ける。
+- conflict 解消が不確実、fail 原因がその修正内にあり解消できない、または実装バグで改善根拠が消えた場合は、その修正を採用しない。
+- 単体では改善し、merge 後に別リソースの飽和や別ボトルネックが露出しただけなら、暫定 baseline として扱い次のボトルネック解消候補を評価する。最終的に best-known 構成を超えない場合だけ、提出前に戻す候補として記録する。

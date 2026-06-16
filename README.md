@@ -305,8 +305,13 @@ flowchart TD
   S --> T
   T -- "Yes" --> U["採用 branch を統合する<br/>git merge feature/..."]
   U --> V["merge 後に再評価する<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  V --> W{"統合後も改善維持?"}
   T -- "No" --> X["baseline に戻す<br/>git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  V --> Y["評価結果を記録する<br/>bash scripts/improvement-log.sh eval ..."]
+  W -- "Yes" --> Y["評価結果を記録する<br/>bash scripts/improvement-log.sh eval ..."]
+  W -- "No" --> Z{"原因分類"}
+  Z -- "バグ / fail" --> AA["原因を修正する"]
+  AA --> L
+  Z -- "次ボトルネック露出" --> Y
   X --> Y
   Y --> J
 ```

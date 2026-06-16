@@ -57,8 +57,19 @@ references/
   agent-rules.md            # エージェント別ルール（Claude Code / Codex / 共通）
   orchestration-rules.md    # 複数エージェント・worktree・merge採否ルール
   phase-boundaries.md       # Phase の責務境界
-  goals/                    # Phase 別 /goal 手順
-  ecs/                      # ECS + RDS 専用 Phase 手順
+  goals/                    # app サーバー内が戦場の場合の Phase 別 /goal 手順
+    phase2-improvement-loop.md
+    phase3-pprof-cycle.md
+    phase4-infra-tuning.md
+    phase6-final-prep.md
+  ecs/                      # Fargate / ALB / Aurora 向け Phase 別 /goal 手順
+    goal-common.md
+    phase1-survey.md        # /isucon-survey 結果の検証・補完
+    phase2-improvement-loop.md
+    phase3-pprof-cycle.md
+    phase4-infra-tuning.md
+    phase5-scale.md
+    phase6-final-prep.md
 .codex/skills/
   isucon-*                  # Codex 用 skill wrapper（.claude/commands を正本として参照）
 .claude/commands/
@@ -68,7 +79,8 @@ references/
   isucon-multiserver.md     # /isucon-multiserver スキル（複数台構成）
   isucon-pprof.md           # /isucon-pprof スキル（Go pprof）
   isucon-review-app.md      # /isucon-review-app スキル（アプリ性能レビュー）
-reports/                    # analyze.sh が生成するレポートの出力先
+reports/                    # analyze.sh や調査 script が生成するレポートの出力先（生成物は原則 git 管理外）
+  .runtime/                 # analyze / ECS logs / SQS response などの一時入力
 ```
 
 ---

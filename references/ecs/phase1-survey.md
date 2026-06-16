@@ -56,6 +56,8 @@ export BACKEND_ALB_PATH='/'
 export BENCH_QUEUE_NAME='<benchmark queue name>'
 export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'
 export REBUILD_CMD='bash scripts/ecs/deploy.sh'
+export BENCH_DURATION_SEC='60'
+export BENCH_RESULT_MARGIN_SEC='15'
 ```
 
 `BENCH_MESSAGE_BODY` / `BENCH_MESSAGE_FILE` は大会固有。`/isucon-survey` で自動確定できなかった場合は、配布資料、マニュアル URL、スクリーンショットを確認して設定する。未確認なら空のまま `reports/survey.md` に TODO を残す。
@@ -103,6 +105,27 @@ bash scripts/ecs/bench-sqs.sh --dry-run
 - JSON 文字列埋め込みが必要な箇所に `_JSON` placeholder を使っている
 - queue URL が benchmark queue を向いている
 
+## Verify Benchmark Completion & Result
+
+SQS benchmark は worker 側で非同期に実行され、`send-message` は MessageId を返すだけで完了や score を返さない。`bench-sqs.sh` は送信後 `BENCH_DURATION_SEC`(+margin) だけブロックしてから返り、`bench-locked.sh` の analyze 窓が空にならないようにしている。配布資料から次を確定し、`reports/survey.md` に記録する。
+
+1. benchmark の実行時間を確認し、`BENCH_DURATION_SEC`（既定 60）に設定する。CloudWatch Logs / メトリクスの取り込み遅延に備えた余裕は `BENCH_RESULT_MARGIN_SEC`（既定 15）。総待ち時間 = duration + margin。
+
+   ```bash
+   export BENCH_DURATION_SEC='60'
+   export BENCH_RESULT_MARGIN_SEC='15'
+   ```
+
+2. score / pass-fail の返却経路を確認する。候補:
+   - 結果用 SQS キュー(`*-result` / `*-response` 等)
+   - ベンチ worker の CloudWatch Logs
+   - ポータル / HTTP エンドポイント
+
+   `scripts/ecs/discover.sh` の `## SQS Queues` と `## CloudWatch Log Groups` 出力から候補を探す。
+
+3. 返却経路が確定したら `bench-sqs.sh` を結果取得込みに作り直す（`BENCH_RESULT_MODE`）。現状 `BENCH_RESULT_MODE` を設定すると「not implemented yet」と表示して duration-wait にフォールバックする。これが Phase 1 後のリビルドの接続点。
+   - 未確定の間は duration-wait で P0-A（空 analyze 窓）を回避し、score は `scripts/score-log.sh <score> "<note>"` で手動記録する。
+
 ## Verify Aurora Slow Query
 
 Aurora は DB cluster parameter group と DB instance parameter group の両方を確認する。
@@ -121,6 +144,27 @@ aws rds describe-db-parameters \
 
 変更が必要な場合は `templates/rds-parameter-group.md` を読み、競技ルールと再起動影響を確認してから parameter group を変更する。
 
+## Verify Measurement Chain (Phase2 入場ゲート)
+
+`scripts/ecs/analyze.sh` は `alp ltsv`（nginx の LTSV 出力前提）と slow query / Performance Insights を読む。これらが揃う前に最初の analyze を回すと、空・無意味な report になる。Phase2 の baseline analyze に入る**前に**、次の計測チェーン疎通を Phase1 で済ませる。
+
+1. nginx container stdout が LTSV であること。
+
+   ```bash
+   bash scripts/ecs/logs.sh --kind nginx
+   ```
+
+   出力が combined など LTSV 以外なら、**image 側 nginx config を LTSV 化（`templates/nginx-00-ltsv.conf` 参照）して deploy** する。running container 内を直接編集しない。これは Phase4 の作業ではなく Phase1 で済ませる。
+
+2. Aurora の slow query が読めること。cluster / instance parameter group で `slow_query_log=1` + `log_output=TABLE`（上記 "Verify Aurora Slow Query" 参照）。**または** Performance Insights が有効であること。PI が有効なら mysql 直結不要で、クエリを DB Load 順に順位付けできる（VPC 外の workstation から Aurora に到達できない場合の代替になる）。
+
+3. baseline ベンチ→`scripts/ecs/analyze.sh` の出力が **NON-EMPTY** であることを確認してから Phase2 に入る。
+
+   - alp セクションに行が出ている
+   - slow query セクション **または** Performance Insights セクションに行が出ている
+
+   どちらかが空なら、Phase2 に進まずまず計測を直す（LTSV 化・slow query 有効化 / PI 有効化・到達性）。
+
 ## Output
 
 - `scripts/env.sh` の確認・補完
@@ -131,5 +175,6 @@ aws rds describe-db-parameters \
 
 - benchmark は backend ALB を直接叩くか、frontend ALB 経由か
 - benchmark SQS message body の正確な形式
+- benchmark の実行時間（`BENCH_DURATION_SEC`）と、score / pass-fail の返却経路（結果 SQS / worker logs / ポータル）
 - pprof を ECS Exec、task IP、temporary security group のどれで取るか
 - app は stateless か。画像/upload/session が local 依存でないか

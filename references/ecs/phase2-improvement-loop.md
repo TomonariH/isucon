@@ -11,6 +11,8 @@
 
 ## Procedure
 
+- 前提: baseline を取る前に、Phase1 の「計測チェーン疎通ゲート」（nginx LTSV / Aurora slow query or Performance Insights / 非空 analyze）を通過していること（`references/ecs/phase1-survey.md` の "Verify Measurement Chain (Phase2 入場ゲート)" 参照）。通過していなければ最初の analyze が空になるので、まず計測を直す。
+
 1. app repo を確認し、統合 branch に移動する。
 2. baseline を取る。
 

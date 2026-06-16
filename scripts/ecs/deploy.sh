@@ -66,6 +66,33 @@ if [ "${SKIP_DOCKER_BUILD:-0}" != "1" ]; then
     exit 1
   }
 
+  # build host の arch が Fargate task の arch と一致しないと exec format error になり task が安定しない。
+  # DOCKER_PLATFORM が未指定なら task definition の runtimePlatform.cpuArchitecture から推定する。
+  if [ -z "${DOCKER_PLATFORM:-}" ]; then
+    task_def="$(ecs_service_task_definition 2>/dev/null || true)"
+    task_arch=""
+    if [ -n "$task_def" ] && [ "$task_def" != "None" ]; then
+      task_arch="$(ecs_aws ecs describe-task-definition \
+        --task-definition "$task_def" \
+        --query 'taskDefinition.runtimePlatform.cpuArchitecture' \
+        --output text 2>/dev/null || true)"
+    fi
+    case "$task_arch" in
+      ARM64)
+        DOCKER_PLATFORM="linux/arm64"
+        ecs_log "detected Fargate task arch ARM64 -> DOCKER_PLATFORM=$DOCKER_PLATFORM"
+        ;;
+      X86_64)
+        DOCKER_PLATFORM="linux/amd64"
+        ecs_log "detected Fargate task arch X86_64 -> DOCKER_PLATFORM=$DOCKER_PLATFORM"
+        ;;
+      *)
+        ecs_log "WARN: could not determine Fargate task arch. build host arch must match the task arch (mismatch -> exec format error, task never stable). Proceeding without forcing --platform."
+        ;;
+    esac
+    PLATFORM_ARG="${DOCKER_PLATFORM:+--platform $DOCKER_PLATFORM}"
+  fi
+
   ECR_REGISTRY="${ECR_IMAGE%%/*}"
   ecs_log "docker build: $ECR_IMAGE:$IMAGE_TAG"
   # shellcheck disable=SC2086

@@ -106,6 +106,8 @@ export BACKEND_ALB_NAME='<backend-alb-name>'
 export FRONTEND_ALB_NAME='<frontend-alb-name>'
 export BENCH_QUEUE_NAME='<benchmark-queue-name>'
 export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'
+export BENCH_DURATION_SEC='60'
+# export BENCH_RESULT_MODE=''
 export REBUILD_CMD='bash scripts/ecs/deploy.sh'
 ```
 
@@ -173,6 +175,13 @@ listeners_section() {
 
   json_section "RDS / Aurora Instances" ecs_aws rds describe-db-instances \
     --query 'DBInstances[*].{id:DBInstanceIdentifier,cluster:DBClusterIdentifier,engine:Engine,endpoint:Endpoint.Address,dbParameterGroup:DBParameterGroups[0].DBParameterGroupName}'
+
+  # Aurora(3306) / task pprof(6060) への到達性診断のため SG と Subnet/VPC を出す。
+  json_section "Security Groups" ecs_aws ec2 describe-security-groups \
+    --query 'SecurityGroups[*].{id:GroupId,name:GroupName,vpc:VpcId,ingress:IpPermissions[*].{from:FromPort,to:ToPort,proto:IpProtocol,cidrs:IpRanges[*].CidrIp,sgs:UserIdGroupPairs[*].GroupId}}'
+
+  json_section "Subnets / VPCs" ecs_aws ec2 describe-subnets \
+    --query 'Subnets[*].{id:SubnetId,vpc:VpcId,az:AvailabilityZone,cidr:CidrBlock,public:MapPublicIpOnLaunch}'
 
   json_section "SQS Queues" ecs_aws sqs list-queues
 

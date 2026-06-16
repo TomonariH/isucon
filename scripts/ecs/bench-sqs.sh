@@ -15,11 +15,12 @@ MESSAGE_BODY="${BENCH_MESSAGE_BODY:-}"
 MESSAGE_FILE="${BENCH_MESSAGE_FILE:-}"
 OUT="${BENCH_SQS_OUT:-$TOOL_REPO/reports/.runtime/ecs-bench-sqs-response.json}"
 DRY_RUN=0
+NO_WAIT=0
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/ecs/bench-sqs.sh [--dry-run]
+  scripts/ecs/bench-sqs.sh [--dry-run] [--no-wait]
 
 Environment:
   BENCH_QUEUE_URL       SQS queue URL. If empty, BENCH_QUEUE_NAME is resolved with aws sqs get-queue-url.
@@ -31,6 +32,20 @@ Environment:
   BENCH_SQS_OUT         response output path, default: reports/.runtime/ecs-bench-sqs-response.json
   SQS_MESSAGE_GROUP_ID  optional for FIFO queues.
   SQS_MESSAGE_DEDUPLICATION_ID optional for FIFO queues.
+  BENCH_DURATION_SEC    expected benchmark run time in seconds. Default 60.
+                        The SQS benchmark runs asynchronously in a worker, so after
+                        sending the request this script blocks for this long so that
+                        the analyze window (BENCH_START_EPOCH..now) is populated.
+  BENCH_RESULT_MARGIN_SEC  extra seconds waited after BENCH_DURATION_SEC for CloudWatch
+                        log ingestion lag. Default 15. Total wait = duration + margin.
+  BENCH_RESULT_MODE     future extension seam for fetching the real score/pass-fail
+                        (e.g. result SQS queue / worker logs / portal HTTP). Not
+                        implemented yet; if set to anything, a notice is printed and
+                        the script falls back to the duration wait. Default empty.
+
+Flags:
+  --dry-run             print the resolved request without sending; never waits.
+  --no-wait             send the request but skip the duration wait (fire-and-forget).
 
 Placeholders:
   {{BENCH_TARGET_URL}}, {{BACKEND_ALB_URL}}, {{FRONTEND_ALB_URL}}, {{BENCH_QUEUE_URL}}
@@ -42,6 +57,9 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run)
       DRY_RUN=1
+      ;;
+    --no-wait)
+      NO_WAIT=1
       ;;
     -h|--help)
       usage; exit 0
@@ -115,3 +133,49 @@ ecs_log "send benchmark request: queue=$QUEUE_URL target=$TARGET_URL"
 ecs_aws "${args[@]}" --output json > "$OUT"
 ecs_log "wrote: $OUT"
 cat "$OUT"
+
+if [ "$NO_WAIT" = "1" ]; then
+  ecs_log "--no-wait: skipping benchmark completion wait (fire-and-forget)"
+  exit 0
+fi
+
+# The SQS benchmark runs asynchronously in a worker for tens of seconds, while
+# send-message returns in ~1s. bench-locked.sh runs analyze AFTER BENCH_CMD, so
+# we block here for the expected benchmark duration plus a CloudWatch log
+# ingestion margin. By the time control returns, the benchmark has finished and
+# the BENCH_START_EPOCH..now window is populated.
+DURATION="${BENCH_DURATION_SEC:-60}"
+MARGIN="${BENCH_RESULT_MARGIN_SEC:-15}"
+
+case "$DURATION" in
+  ''|*[!0-9]*)
+    echo "[ecs] ERROR: BENCH_DURATION_SEC must be a non-negative integer: '$DURATION'" >&2
+    exit 1
+    ;;
+esac
+case "$MARGIN" in
+  ''|*[!0-9]*)
+    echo "[ecs] ERROR: BENCH_RESULT_MARGIN_SEC must be a non-negative integer: '$MARGIN'" >&2
+    exit 1
+    ;;
+esac
+
+if [ -n "${BENCH_RESULT_MODE:-}" ]; then
+  echo "[ecs] BENCH_RESULT_MODE='${BENCH_RESULT_MODE}' not implemented yet; will be built after Phase 1 confirms the result mechanism" >&2
+fi
+
+total=$((DURATION + MARGIN))
+ecs_log "benchmark request sent; waiting ${total}s (duration ${DURATION}s + margin ${MARGIN}s) for async benchmark to finish and logs to ingest"
+sleep "$total"
+
+cat <<EOF
+[ecs] ============================================================
+[ecs] benchmark wait finished (${total}s).
+[ecs] score / pass-fail is NOT captured automatically yet (P0-B).
+[ecs]   Determine the result from the contest materials and record it:
+[ecs]     bash scripts/score-log.sh <score> "<note>"
+[ecs]   SQS send-message response (MessageId only): $OUT
+[ecs]   Automated result retrieval will be added after Phase 1 confirms
+[ecs]   the mechanism (see BENCH_RESULT_MODE).
+[ecs] ============================================================
+EOF

@@ -66,6 +66,11 @@ fi
 
 BENCH_START_EPOCH="$(date +%s)"
 set +e
+# BENCH_CMD must block until the benchmark actually finishes so that analyze
+# below sees a populated CloudWatch window (BENCH_START_EPOCH..now). The SQS
+# benchmark is asynchronous, so scripts/ecs/bench-sqs.sh blocks for
+# BENCH_DURATION_SEC (+ ingestion margin) after sending the request. Do not add
+# a second wait here.
 eval "$BENCH_CMD"
 BENCH_STATUS=$?
 set -e

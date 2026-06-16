@@ -24,9 +24,11 @@ Usage:
   scripts/ecs/analyze.sh
 
 Environment:
-  BENCH_START_EPOCH  fetch CloudWatch logs since this epoch, default: now-10min
+  BENCH_START_EPOCH  fetch CloudWatch logs/metrics since this epoch, default: now-10min
   ECS_*_LOG_GROUP    CloudWatch Logs group settings used by scripts/ecs/logs.sh
   DB_TYPE            rds|aurora to include RDS slow query analysis
+  SKIP_CW_METRICS    1 to skip the CloudWatch metrics section (scripts/ecs/metrics.sh)
+  SKIP_PI            1 to skip the Performance Insights section (scripts/ecs/pi.sh)
 EOF
 }
 
@@ -86,6 +88,33 @@ run_rds() {
   echo ""
 }
 
+run_metrics() {
+  if [ "${SKIP_CW_METRICS:-0}" = "1" ]; then
+    return
+  fi
+  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/metrics.sh" --since-epoch "$BENCH_START_EPOCH" 2>&1 || {
+    echo "## CloudWatch Metrics"
+    echo ""
+    echo "> metrics.sh failed (check aws/python3 and IAM cloudwatch:GetMetricStatistics). Set SKIP_CW_METRICS=1 to skip."
+    echo ""
+  }
+}
+
+run_pi() {
+  if [ "${SKIP_PI:-0}" = "1" ]; then
+    return
+  fi
+  if [ "${DB_TYPE:-}" != "rds" ] && [ "${DB_TYPE:-}" != "aurora" ]; then
+    return
+  fi
+  BENCH_START_EPOCH="$BENCH_START_EPOCH" bash "$SCRIPT_DIR/pi.sh" --since-epoch "$BENCH_START_EPOCH" 2>&1 || {
+    echo "## Performance Insights"
+    echo ""
+    echo "> pi.sh failed (check aws/python3 and IAM pi:GetResourceMetrics / rds:DescribeDBInstances). Set SKIP_PI=1 to skip."
+    echo ""
+  }
+}
+
 main() {
   mkdir -p "$TOOL_REPO/reports" "$RUNTIME_DIR"
   log "fetching nginx stdout from CloudWatch Logs"
@@ -103,6 +132,8 @@ main() {
     echo ""
     run_alp
     run_rds
+    run_metrics
+    run_pi
     echo "---"
     echo ""
     echo "_Ask Claude: \`/isucon-analyze\` to get optimization suggestions based on this report._"

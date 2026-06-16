@@ -17,8 +17,12 @@ DB_PORT="${DB_PORT:-3306}"
 DB_USER="${DB_USER:-isucon}"
 DB_PASS="${DB_PASS:-isucon}"
 
+# VPC 外の workstation から Aurora writer endpoint へ TCP 接続するとデフォルトでは長くハングする。
+# connect-timeout を入れて速やかに fail させ、フォールバック（PI / log file download）に落とす。
+MYSQL_CONNECT_TIMEOUT="${MYSQL_CONNECT_TIMEOUT:-5}"
+
 # 配列にすることでパスワードのスペースや特殊文字に対応
-MYSQL_OPTS=(-h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "-p$DB_PASS")
+MYSQL_OPTS=(-h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "-p$DB_PASS" --connect-timeout="$MYSQL_CONNECT_TIMEOUT")
 
 ALP_CONFIG="${ALP_CONFIG:-$REPO_DIR/scripts/alp.yml}"
 SLOW_LOG_MINUTES="${SLOW_LOG_MINUTES:-60}"
@@ -151,6 +155,8 @@ run_slow_log_file_aws() {
   else
     echo "> Failed to download RDS slow query log."
     echo "> Ensure RDS_INSTANCE is correct and log_output includes FILE."
+    echo "> Aurora に到達できない場合は Performance Insights（ECS では scripts/ecs/analyze.sh の"
+    echo "> Performance Insights セクション）でクエリを順位付けする、または aws rds download-db-log-file-portion を使う。"
     rm -f "$TMP_LOG"
   fi
   echo ""
@@ -194,8 +200,11 @@ generate_report() {
     if ! run_slow_log_table; then
       echo "## Slow Query Log"
       echo ""
-      echo "> mysql.slow_log TABLE mode not configured."
+      echo "> mysql.slow_log TABLE mode not configured, or Aurora に到達できませんでした。"
       echo "> パラメータグループで log_output=TABLE を設定してください: templates/rds-parameter-group.md"
+      echo "> Aurora に到達できない（VPC 外 workstation など）場合は Performance Insights"
+      echo "> （ECS では \`scripts/ecs/analyze.sh\` の Performance Insights セクション）でクエリを順位付けする、"
+      echo "> または \`aws rds download-db-log-file-portion\` を使う。"
       echo "> Trying AWS CLI fallback..."
       echo ""
       run_slow_log_file_aws

@@ -144,6 +144,8 @@ rds_instance="${RDS_INSTANCE:-}"
   echo "export BENCH_QUEUE_NAME='${BENCH_QUEUE_NAME:-<benchmark-queue-name>}'"
   echo "export BENCH_CMD='bash scripts/ecs/bench-sqs.sh'"
   echo "export BENCH_MESSAGE_BODY='{\"target_url\":\"{{BENCH_TARGET_URL}}\"}'"
+  echo "export BENCH_DURATION_SEC='60'"
+  echo "# export BENCH_RESULT_MODE=''"
   echo '```'
 } > "$REPORT_FILE"
 

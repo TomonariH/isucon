@@ -34,7 +34,9 @@ scripts/
     bench-sqs.sh    # SQS queue に benchmark request を送信
     resolve-alb-url.sh # ALB name/ARN/DNS から target URL を解決
     logs.sh         # CloudWatch Logs から nginx/app stdout を取得
-    analyze.sh      # ECS nginx stdout + RDS slow log の分析 report を生成
+    metrics.sh      # ベンチ窓の CloudWatch メトリクス(Aurora/ALB/Fargate, AuroraReplicaLag含む)を取得
+    pi.sh           # Aurora/RDS Performance Insights で SQL 別 DB Load と wait event を取得
+    analyze.sh      # ECS nginx stdout + RDS slow log + CloudWatch メトリクスの分析 report を生成
     pprof.sh        # ECS pprof 取得補助
 templates/
   nginx-00-ltsv.conf        # nginx LTSV アクセスログ設定
@@ -322,7 +324,7 @@ bash scripts/ecs/bench-locked.sh --analyze
 bash scripts/ecs/bench-locked.sh --rebuild --analyze
 ```
 
-SQS では `send-message` が benchmark の完了や score を返すとは限らない。配布資料の手順に従い、benchmark 結果の取得方法、pass/fail message、score 記録方法を `reports/survey.md` に残す。SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command をそのまま設定する。
+SQS ベンチは非同期なので `bench-sqs.sh` は送信後 `BENCH_DURATION_SEC`(既定60)+margin だけ待ってから返り、analyze の窓を有効化する。score 取得経路は Phase1 で確定する。SQS では `send-message` が benchmark の完了や score を返すとは限らない。配布資料の手順に従い、benchmark 結果の取得方法、pass/fail message、score 記録方法を `reports/survey.md` に残す。SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command をそのまま設定する。
 
 benchmark 後に分析だけをやり直す場合:
 
@@ -330,7 +332,7 @@ benchmark 後に分析だけをやり直す場合:
 BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
 ```
 
-ECS では access log はローカルファイルではなく CloudWatch Logs から取得する。RDS slow query は `mysql.slow_log` または RDS log file から読む。pprof は ECS Exec、task IP、または一時 security group のどれで取るかを Phase 3 で決める。
+ECS では access log はローカルファイルではなく CloudWatch Logs から取得する。RDS slow query は `mysql.slow_log` または RDS log file から読む。`scripts/ecs/analyze.sh` はベンチ窓の CloudWatch メトリクス（Aurora の CPU/接続数/BufferCacheHitRatio/ACU、ALB の TargetResponseTime/5XX/RequestCount、Fargate の CPU/Memory）も `scripts/ecs/metrics.sh` 経由で取得し、アプリ律速か DB 律速か接続律速かの切り分けに使う。Aurora/RDS では `scripts/ecs/pi.sh` 経由で Performance Insights の SQL 別 DB Load（AAS）と wait event も取得し、ボトルネック SQL を順位付けする。pprof は ECS Exec、task IP、または一時 security group のどれで取るかを Phase 3 で決める。
 
 ---
 
@@ -553,6 +555,15 @@ ECS nginx stdout を CloudWatch Logs から取得し、alp で解析する。DB 
 ```bash
 bash scripts/ecs/analyze.sh
 BENCH_START_EPOCH=<epoch> bash scripts/ecs/analyze.sh
+```
+
+### `scripts/ecs/pi.sh`
+
+Aurora / RDS の Performance Insights から、ベンチ窓の SQL 別 DB Load（AAS）と wait event を取得して markdown を出す。slow log より正確にボトルネック SQL を順位付けできる。`PI_IDENTIFIER`（DbiResourceId）が空なら `RDS_INSTANCE` から解決する。Performance Insights が無効なら note を出して skip する。IAM は `pi:GetResourceMetrics` と `rds:DescribeDBInstances` が必要。`analyze.sh` からは `DB_TYPE` が rds/aurora のときだけ呼ばれ、`SKIP_PI=1` で skip できる。
+
+```bash
+bash scripts/ecs/pi.sh --since-epoch <epoch>
+PI_IDENTIFIER=<DbiResourceId> bash scripts/ecs/pi.sh --since-epoch <epoch>
 ```
 
 ### `scripts/ecs/pprof.sh`

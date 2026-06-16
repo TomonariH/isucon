@@ -126,6 +126,26 @@ ecs_alb_url_for() {
   echo "$lb_info"
 }
 
+# CloudWatch の AWS/ApplicationELB 用 LoadBalancer dimension 値 (app/<name>/<id>) を返す。
+ecs_alb_dimension_for() {
+  local kind="$1"
+  local upper arn name
+  upper="$(ecs_upper "$kind")"
+
+  arn="$(ecs_indirect "${upper}_ALB_ARN")"
+  name="$(ecs_indirect "${upper}_ALB_NAME")"
+  if [ -z "$arn" ] && [ -n "$name" ]; then
+    ecs_require_cmd aws || return 1
+    arn="$(ecs_aws elbv2 describe-load-balancers --names "$name" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)"
+  fi
+  [ -n "$arn" ] && [ "$arn" != "None" ] || {
+    echo "[ecs] ERROR: ${upper}_ALB_ARN or ${upper}_ALB_NAME is required for CloudWatch metrics" >&2
+    return 1
+  }
+  # arn:...:loadbalancer/app/<name>/<id> -> app/<name>/<id>
+  printf '%s' "${arn##*loadbalancer/}"
+}
+
 ecs_latest_task_arn() {
   ecs_require_env ECS_CLUSTER ECS_SERVICE || return 1
   ecs_aws ecs list-tasks \
@@ -200,6 +220,8 @@ ecs_fetch_logs() {
   start_ms=$((since_epoch * 1000))
   mkdir -p "$(dirname "$out")"
   tmp_json="$(mktemp)"
+  # AWS CLI v2 の filter-log-events はデフォルトで自動ページネーションし全 event を取得する。
+  # そのため --no-paginate や max_items を付けて呼んではならない（途中で打ち切られる）。
   if [ -n "$prefix" ]; then
     ecs_aws logs filter-log-events \
       --log-group-name "$group" \

@@ -73,7 +73,9 @@ reports/                    # analyze.sh が生成するレポートの出力先
 
 ---
 
-## 競技当日の使い方
+## 競技当日の使い方（app サーバー内が戦場の場合）
+
+この章は、app サーバーに SSH して systemd / Docker Compose / nginx / MySQL を直接調査・変更できる通常構成を前提にする。Fargate/ALB/Aurora のように AWS managed service とローカル端末が主戦場になる構成では、後続の `Fargate/ALB/Aurora 環境の戦い方` を使う。
 
 ### Phase 0 — 事前準備
 

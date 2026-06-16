@@ -282,18 +282,34 @@ compact や中断から復帰した場合は、作業再開前に `references/ec
 
 ```mermaid
 flowchart TD
-  A["/goal phase2"] --> B["baseline benchmark + analyze"]
-  B --> C["/isucon-analyze"]
-  C --> D["候補抽出"]
-  D --> E["候補ごとに修正"]
-  E --> F["deploy + benchmark + analyze"]
-  F --> G{"公式 score 取得済み?"}
-  G -- "Yes" --> H["score-log.sh で確定記録"]
-  G -- "No" --> I["ALB RequestCount / p99 / PI AAS で暫定比較"]
-  H --> J{"採用?"}
-  I --> J
-  J -- "Yes" --> K["merge 後に再 benchmark"]
-  J -- "No" --> L["baseline を再 deploy"]
+  A["/goal phase2"] --> B["source scripts/env.sh"]
+  B --> C["bash scripts/ecs/bench-locked.sh --analyze"]
+  C --> D["BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
+  D --> E["bash scripts/ecs/analyze.sh"]
+  E --> F{"CloudWatch / PI<br/>publish 済み?"}
+  F -- "No" --> G["BENCH_START_EPOCH=&lt;epoch&gt;<br/>bash scripts/ecs/analyze.sh"]
+  G --> F
+  F -- "Yes" --> H["bash scripts/score-log.sh &lt;score&gt; 'ecs baseline'"]
+  H --> I["/isucon-analyze"]
+  I --> J["bash scripts/improvement-log.sh candidate ..."]
+  J --> K["git worktree add ... -b feature/...<br/>候補ごとに修正"]
+  K --> L["bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  L --> M["REBUILD_CMD<br/>bash scripts/ecs/deploy.sh"]
+  M --> N["bash scripts/ecs/wait-stable.sh"]
+  N --> O["BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
+  O --> P["bash scripts/ecs/analyze.sh"]
+  P --> Q{"公式 score 取得済み?"}
+  Q -- "Yes" --> R["bash scripts/score-log.sh &lt;score&gt; &lt;note&gt;"]
+  Q -- "No" --> S["ALB RequestCount / p99 / PI AAS<br/>で暫定比較"]
+  R --> T{"採用?"}
+  S --> T
+  T -- "Yes" --> U["git merge feature/..."]
+  U --> V["bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  V --> W["bash scripts/improvement-log.sh eval ..."]
+  T -- "No" --> X["git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
+  X --> Y["bash scripts/improvement-log.sh eval ..."]
+  W --> J
+  Y --> J
 ```
 
 ### 個別でベンチマークを流す場合

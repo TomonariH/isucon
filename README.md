@@ -231,13 +231,11 @@ frontend ALB と backend ALB は分けて扱う。frontend task から backend A
 
 ### 初動
 
-```bash
-source scripts/env.sh 2>/dev/null || true
-AWS_REGION=<region> bash scripts/ecs/discover.sh
-ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
+```text
+/isucon-survey
 ```
 
-`reports/aws-survey.md` で AWS 全体の構造を見て、backend service、backend ALB、Aurora cluster、benchmark SQS queue を特定する。その後 `reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
+`/isucon-survey` が AWS credential / region を確認し、AWS managed 構成なら内部で AWS 全体の構造と backend ECS service の詳細を調査する。`reports/aws-survey.md` と `reports/ecs-survey.md` を材料に、backend service、backend ALB、Aurora cluster、benchmark SQS queue を特定し、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
 
 SQS 経由で benchmark を起動する環境では、最低限次を埋める。
 

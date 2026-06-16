@@ -1,0 +1,48 @@
+# Orchestration Rules
+
+複数エージェント・複数 branch / worktree で改善候補を評価するときのルール。
+
+## Roles
+
+メインエージェント:
+
+- 候補抽出
+- branch / worktree 作成
+- 実装担当への割り当て
+- rebuild / restart
+- benchmark
+- 採否判断
+- merge
+- 記録
+
+サブエージェント:
+
+- 割り当てられた1候補・1 branch / worktree のみ編集する
+- コード修正、ローカルテスト、commit 作成まで行う
+- rebuild / restart、benchmark、merge は実行しない
+
+## Parallelism
+
+- 実装の同時実行数は最大5件まで。
+- ファイルや領域でまとめず、提案項目1つにつき1つの独立 branch / worktree に分ける。
+- 複数提案を1つの worktree にまとめない。
+- benchmark は直列化する。並列実行しない。
+
+## Candidate Selection
+
+- `/isucon-analyze` や pprof 結果から、高インパクト・中インパクトの提案だけを候補にする。
+- 小インパクトのみになったら、その loop は終了する。
+- 候補ID、インパクト、難易度、予定 branch、改善方法を記録する。
+
+## Evaluation
+
+- 各修正 branch ごとに `$TOOL_REPO/scripts/bench-locked.sh --rebuild` で評価する。
+- pass し、基準スコアより明確に改善した修正だけを merge 対象にする。
+- fail が出た場合は `$TOOL_REPO/references/goal-common.md` の Failure Diagnosis に従う。
+
+## Merge
+
+- merge は `$APP_REPO` の `feature/isucon-work` に対して行う。
+- merge 後は `$TOOL_REPO/scripts/bench-locked.sh --rebuild` を実行する。
+- pass し、スコア改善が維持される場合のみ merge を確定する。
+- コンフリクト解決が不確実、fail 原因を解消できない、またはスコア改善が消えた場合は、その修正は merge しない。

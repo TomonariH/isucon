@@ -228,6 +228,12 @@ compact や中断から復帰した場合は、作業再開前に `goal-common.m
 
 ## Fargate/ALB/Aurora 環境の戦い方
 
+作業場所は ECS task 内ではなく、AWS CLI と Docker が使えるローカル端末または作業用 EC2 を基本にする。
+
+ECS task は入れ替わる前提なので、running container 内で直接設定を書き換えない。
+
+作業端末には AWS CLI、Docker、python3、alp、RDS 解析に必要な mysql client / pt-query-digest を用意する。
+
 ### 初動
 
 ```text
@@ -310,6 +316,10 @@ SQS ベンチの注意:
 - `send-message` は benchmark の完了や score を返すとは限らない。
 - benchmark 結果の取得方法、pass/fail message、score 記録方法は `reports/survey.md` に残す。
 - SQS ではない環境では `BENCH_CMD` に benchmark binary / HTTP request / wrapper command を設定する。
+
+CloudWatch メトリクスと Performance Insights には publish 遅延がある。ベンチ直後の `CPUUtilization`、`DatabaseConnections`、PI AAS が過小または `n/a` に見える場合は、ベンチ完了の数分後に同じ `BENCH_START_EPOCH` で `scripts/ecs/analyze.sh` を再実行して比較する。
+
+公式 score の自動取得が未確定な間は、ALB `RequestCount`（window 合計）、`TargetResponseTime` p99、Performance Insights の Total DB Load(AAS) を暫定ランキング指標にする。RequestCount は benchmark が実際に叩く ALB を見る。公式 score が取れたら `scripts/score-log.sh` で確定記録する。
 
 ---
 

@@ -19,6 +19,7 @@ Guidance for AI agents when working in this repository.
 
 - benchmark / rebuild / restart は `scripts/bench-locked.sh` 経由で直列化する。
 - fail が出た場合は推測で戻さず、benchmark messages、app/nginx/MySQL/cache ログ、access log、slow query から原因を特定する。
+- スペック増強や外部リソース追加で負荷を下げる方針は、ISUCON 競技では禁止前提で扱う。Fargate task CPU/memory、Aurora インスタンス級・ACU 上限、reader 追加、ElastiCache/Redis/S3 等の新規外部リソース追加、AZ 移動などを改善候補として提案・実施しない。
 - `git reset --hard` などの破壊的操作は禁止。
 - ユーザーや他エージェントの未コミット変更を巻き戻さない。
 - 本番環境に影響する変更は、根拠、検証方法、ロールバック方法を明確にする。

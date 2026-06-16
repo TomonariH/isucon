@@ -8,68 +8,31 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
+source "$SCRIPT_DIR/lib-docker.sh"
 
 # /isucon-survey が生成した env.sh を読む（存在すれば）
-[ -f "$SCRIPT_DIR/env.sh" ] && source "$SCRIPT_DIR/env.sh"
+load_isucon_env "$SCRIPT_DIR"
 
 log() { echo "[setup-docker] $*"; }
 
 # ---- compose ファイル・サービスを特定 ----
-find_compose_dir() {
-  if [ -n "${DOCKER_COMPOSE_DIR:-}" ]; then
-    realpath "$DOCKER_COMPOSE_DIR"; return
-  fi
-  for dir in "." "${ISUCON_WEBAPP_DIR:-/home/isucon/webapp}"; do
-    [ -z "$dir" ] && continue
-    if [ -f "$dir/compose.yml" ] || [ -f "$dir/docker-compose.yml" ]; then
-      realpath "$dir"; return
-    fi
-  done
-  echo ""
-}
-
-COMPOSE_DIR="$(find_compose_dir)"
+COMPOSE_DIR="$(detect_compose_dir || true)"
 if [ -z "$COMPOSE_DIR" ]; then
   log "ERROR: compose.yml not found."
   log "  Run /isucon-survey to generate scripts/env.sh, or set DOCKER_COMPOSE_DIR=<path>."
   exit 1
 fi
-COMPOSE_FILE="$COMPOSE_DIR/compose.yml"
-[ -f "$COMPOSE_FILE" ] || COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
+COMPOSE_FILE="$(detect_compose_file "$COMPOSE_DIR" || true)"
+if [ -z "$COMPOSE_FILE" ]; then
+  log "ERROR: compose file not found under $COMPOSE_DIR."
+  log "  Set DOCKER_COMPOSE_FILE=<absolute path> or DOCKER_COMPOSE_DIR=<path> in scripts/env.sh."
+  exit 1
+fi
 log "Found: $COMPOSE_FILE"
 
-compose_services() {
-  (cd "$COMPOSE_DIR" && docker compose config --services 2>/dev/null)
-}
-
-detect_compose_service() {
-  local preferred="$1"
-  shift
-  local services svc candidate
-  services="$(compose_services || true)"
-
-  if [ -n "$preferred" ] && { [ -z "$services" ] || echo "$services" | grep -Fxq "$preferred"; }; then
-    echo "$preferred"; return
-  fi
-
-  for candidate in "$@"; do
-    if echo "$services" | grep -Fxq "$candidate"; then
-      echo "$candidate"; return
-    fi
-  done
-
-  for candidate in "$@"; do
-    svc="$(echo "$services" | grep -E "$candidate" | head -1 || true)"
-    if [ -n "$svc" ]; then
-      echo "$svc"; return
-    fi
-  done
-
-  echo ""
-}
-
-NGINX_SERVICE="$(detect_compose_service "${DOCKER_NGINX_SERVICE:-}" nginx proxy reverse-proxy front)"
-MYSQL_SERVICE="$(detect_compose_service "${DOCKER_MYSQL_SERVICE:-}" mysql db mariadb)"
+COMPOSE_SERVICES="$(compose_services_for_file "$COMPOSE_DIR" "$COMPOSE_FILE" || true)"
+NGINX_SERVICE="$(detect_named_service "$COMPOSE_SERVICES" "${DOCKER_NGINX_SERVICE:-}" nginx proxy reverse-proxy front || true)"
+MYSQL_SERVICE="$(detect_named_service "$COMPOSE_SERVICES" "${DOCKER_MYSQL_SERVICE:-}" mysql db mariadb || true)"
 if [ -z "$NGINX_SERVICE" ]; then
   log "ERROR: nginx service not found. Set DOCKER_NGINX_SERVICE=<service>."
   exit 1
@@ -80,28 +43,9 @@ if [ -z "$MYSQL_SERVICE" ]; then
 fi
 log "Services: nginx=$NGINX_SERVICE mysql=$MYSQL_SERVICE"
 
-# ---- アプリサービスを特定（GC トレース等の per-app 設定に使う） ----
-# ユーザーが env.sh で APP_SERVICES を明示指定していてもこのフィルタを必ず通す。
-# nginx/mysql/memcached/redis を誤って含めると docker-compose.isucon-logs.yml で
-# サービスキーが重複し、無効な YAML になるため。
-detect_app_services() {
-  local services svc
-  if [ -n "${APP_SERVICES:-}" ]; then
-    services="$(echo "$APP_SERVICES" | tr ' ' '\n')"
-  else
-    services="$(compose_services || true)"
-  fi
-  while IFS= read -r svc; do
-    [ -z "$svc" ] && continue
-    case "$svc" in
-      "$NGINX_SERVICE"|"$MYSQL_SERVICE") continue ;;
-      memcached|redis|*memcached*|*redis*) continue ;;
-      *fluentd*|*jaeger*|*prometheus*|*grafana*|*adminer*|*redis-commander*) continue ;;
-    esac
-    echo "$svc"
-  done <<< "$services"
-}
-APP_SERVICES="$(detect_app_services | tr '\n' ' ' | xargs)"
+# APP_SERVICES が env.sh にあっても、nginx/mysql/cache を除外して override の
+# サービスキー重複を防ぐ。
+APP_SERVICES="$(filter_compose_app_services "$COMPOSE_SERVICES" "$NGINX_SERVICE" "$MYSQL_SERVICE" "${APP_SERVICES:-}" | tr '\n' ' ' | xargs)"
 log "App services: ${APP_SERVICES:-(none detected)}"
 
 # ---- 1. ログディレクトリをホストに作成 ----
@@ -118,12 +62,7 @@ log "Created: $LOG_DIR/{nginx,mysql}"
 MYSQL_CNF_DIR="$COMPOSE_DIR/etc/mysql"
 MYSQL_CNF_FILE="$MYSQL_CNF_DIR/slow-query.cnf"
 mkdir -p "$MYSQL_CNF_DIR"
-cat > "$MYSQL_CNF_FILE" <<'EOF'
-[mysqld]
-slow_query_log = 1
-slow_query_log_file = /var/log/mysql/slow.log
-long_query_time = 0
-EOF
+cp "$SCRIPT_DIR/../templates/mysql-slow.cnf" "$MYSQL_CNF_FILE"
 log "Created: $MYSQL_CNF_FILE"
 
 # ---- 2. 専用 override でログ volume マウントを追加 ----
@@ -154,12 +93,37 @@ fi
 log "Created: $LOG_OVERRIDE_FILE"
 
 compose_cmd() {
-  local compose_args=(-f "$COMPOSE_FILE")
-  if [ -f "$COMPOSE_DIR/docker-compose.override.yml" ]; then
+  local -a compose_args
+  if [ -n "${DOCKER_COMPOSE_FILE_ARGS:-}" ]; then
+    eval "compose_args=($DOCKER_COMPOSE_FILE_ARGS)"
+  else
+    compose_args=(-f "$COMPOSE_FILE")
+  fi
+  if [ -f "$COMPOSE_DIR/docker-compose.override.yml" ] &&
+     ! printf '%s\n' "${compose_args[@]}" | grep -Fxq "$COMPOSE_DIR/docker-compose.override.yml"; then
     compose_args+=(-f "$COMPOSE_DIR/docker-compose.override.yml")
   fi
-  compose_args+=(-f "$LOG_OVERRIDE_FILE")
+  if ! printf '%s\n' "${compose_args[@]}" | grep -Fxq "$LOG_OVERRIDE_FILE"; then
+    compose_args+=(-f "$LOG_OVERRIDE_FILE")
+  fi
   (cd "$COMPOSE_DIR" && docker compose "${compose_args[@]}" "$@")
+}
+
+compose_file_args_for_log() {
+  local -a compose_args
+  if [ -n "${DOCKER_COMPOSE_FILE_ARGS:-}" ]; then
+    eval "compose_args=($DOCKER_COMPOSE_FILE_ARGS)"
+  else
+    compose_args=(-f "$COMPOSE_FILE")
+  fi
+  if [ -f "$COMPOSE_DIR/docker-compose.override.yml" ] &&
+     ! printf '%s\n' "${compose_args[@]}" | grep -Fxq "$COMPOSE_DIR/docker-compose.override.yml"; then
+    compose_args+=(-f "$COMPOSE_DIR/docker-compose.override.yml")
+  fi
+  if ! printf '%s\n' "${compose_args[@]}" | grep -Fxq "$LOG_OVERRIDE_FILE"; then
+    compose_args+=(-f "$LOG_OVERRIDE_FILE")
+  fi
+  printf '%q ' "${compose_args[@]}"
 }
 
 # ---- 3. nginx LTSV 設定をホスト側のマウントパスに配置 ----
@@ -242,10 +206,7 @@ fi
 
 log ""
 log "Setup complete."
-log "  For future docker compose commands, include: -f $COMPOSE_FILE -f $LOG_OVERRIDE_FILE"
-if [ -f "$COMPOSE_DIR/docker-compose.override.yml" ]; then
-  log "  Existing override also needs to be included: -f $COMPOSE_DIR/docker-compose.override.yml"
-fi
+log "  For future docker compose commands, include: $(compose_file_args_for_log)"
 if [ "${ISUCON_APP_LANG:-}" = "go" ] && [ -n "$APP_SERVICES" ]; then
   log "  GODEBUG=gctrace=1 set on: $APP_SERVICES (for bench-locked.sh GC trace capture)"
   ENV_FILE="$SCRIPT_DIR/env.sh"

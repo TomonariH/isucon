@@ -82,3 +82,9 @@ mysql_installed() {
   [ -n "$(detect_mysql_service)" ] && return 0
   return 1
 }
+
+# /isucon-survey が生成した env.sh を読む。
+load_isucon_env() {
+  local script_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  [ -f "$script_dir/env.sh" ] && source "$script_dir/env.sh"
+}

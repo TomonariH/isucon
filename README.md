@@ -15,6 +15,7 @@ scripts/
   setup-docker.sh   # Docker Compose 環境向けセットアップ（ログ expose・nginx LTSV・MySQL slow log）
   setup-rds.sh      # RDS 環境向けセットアップ（MySQL が AWS RDS / Aurora の場合）
   lib.sh            # 共通環境検出ライブラリ（OS / arch / MySQL サービス名など）
+  lib-docker.sh     # Docker Compose 環境向け helper（compose file / service 検出）
   analyze.sh        # ベンチ後に毎回実行する計測・レポート生成（H2O 自動検出）
   analyze-rds.sh    # RDS 環境向け分析（mysql.slow_log テーブル対応）
   score-log.sh      # スコアを reports/scores.md に記録

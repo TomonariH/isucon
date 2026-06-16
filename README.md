@@ -218,7 +218,11 @@ source scripts/env.sh 2>/dev/null || true
 ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
 ```
 
-`reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。以降の `/goal` では次を読む。
+`reports/ecs-survey.md` を読み、`scripts/env.sh` に `ISUCON_RUNTIME=ecs`、ECS service、CloudWatch Logs、ECR、RDS、benchmark の値を埋める。
+
+### `/goal` の Phase 指定
+
+初動後に改善ループへ入る場合は Phase 2 を指定する。次の `/goal` 例は `references/ecs/phase2-improvement-loop.md` を読むため、Phase 2 用。
 
 ```text
 /goal
@@ -229,6 +233,25 @@ ECS_CLUSTER=<cluster> ECS_SERVICE=<service> bash scripts/ecs/survey.sh
 - $TOOL_REPO/references/orchestration-rules.md
 - $TOOL_REPO/references/phase-boundaries.md
 - $TOOL_REPO/references/ecs/phase2-improvement-loop.md
+```
+
+目的が違う場合は最後の Phase 手順だけ差し替える。
+
+```text
+# 初動調査
+- $TOOL_REPO/references/ecs/phase1-survey.md
+
+# pprof
+- $TOOL_REPO/references/ecs/phase3-pprof-cycle.md
+
+# infra tuning
+- $TOOL_REPO/references/ecs/phase4-infra-tuning.md
+
+# scale
+- $TOOL_REPO/references/ecs/phase5-scale.md
+
+# final prep
+- $TOOL_REPO/references/ecs/phase6-final-prep.md
 ```
 
 ### Phase 対応

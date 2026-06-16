@@ -286,13 +286,12 @@ flowchart TD
   B --> C["baseline を測る<br/>bash scripts/ecs/bench-locked.sh --analyze"]
   C --> D["ベンチを起動する<br/>BENCH_CMD<br/>bash scripts/ecs/bench-sqs.sh<br/>or benchmark wrapper"]
   D --> E["結果を解析する<br/>bash scripts/ecs/analyze.sh"]
-  E --> F{"CloudWatch / PI<br/>メトリクス反映済み?"}
+  E --> F{"メトリクス反映済み?"}
   F -- "No" --> G["数分待って同じ窓で再解析する<br/>BENCH_START_EPOCH=&lt;epoch&gt;<br/>bash scripts/ecs/analyze.sh"]
   G --> F
   F -- "Yes" --> H["baseline score を記録する<br/>bash scripts/score-log.sh &lt;score&gt; 'ecs baseline'"]
-  H --> I["/isucon-analyze"]
-  I --> J["候補を記録する<br/>bash scripts/improvement-log.sh candidate ..."]
-  J --> K["候補用 worktree を作る<br/>git worktree add ... -b feature/...<br/>候補ごとに修正"]
+  H --> I["改善候補を記録する<br/>/isucon-analyze<br/>bash scripts/improvement-log.sh candidate ..."]
+  I --> K["候補用 worktree を作る<br/>git worktree add ... -b feature/...<br/>候補ごとに修正"]
   K --> L["修正を反映して評価する<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
   L --> M["image を deploy する<br/>REBUILD_CMD<br/>bash scripts/ecs/deploy.sh"]
   M --> N["service stable を待つ<br/>bash scripts/ecs/wait-stable.sh"]
@@ -305,16 +304,10 @@ flowchart TD
   S --> T
   T -- "Yes" --> U["採用 branch を統合する<br/>git merge feature/..."]
   U --> V["merge 後に再評価する<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  V --> W{"統合後も改善維持?"}
   T -- "No" --> X["baseline に戻す<br/>git switch &lt;baseline branch&gt;<br/>bash scripts/ecs/bench-locked.sh --rebuild --analyze"]
-  W -- "Yes" --> Y["評価結果を記録する<br/>bash scripts/improvement-log.sh eval ..."]
-  W -- "No" --> Z{"原因分類"}
-  Z -- "バグ / fail" --> AA["原因を修正する"]
-  AA --> L
-  Z -- "次ボトルネック露出" --> Y
+  V --> Y["評価結果を記録する<br/>bash scripts/improvement-log.sh eval ..."]
   X --> Y
-  Y --> AB["次候補を選ぶ"]
-  AB --> J
+  Y --> I
 ```
 
 ### 個別でベンチマークを流す場合
